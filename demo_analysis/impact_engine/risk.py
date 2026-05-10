@@ -72,29 +72,6 @@ def assess_death_risk(
         player_name, before_tick, team1_players, team2_players
     )
 
-    alive_prob_drop = 0.0
-    if risk_window_ticks and name_to_idx.get(player_name) is not None:
-        player_idx = name_to_idx[player_name]
-        for tick in risk_window_ticks:
-            if player_idx < len(tick.alive_pred):
-                alive_prob = tick.alive_pred[player_idx]
-                if tick.round_seconds < before_tick.round_seconds:
-                    alive_prob_drop = max(alive_prob_drop, 0.0)
-
-        early_ticks = [t for t in risk_window_ticks if abs(t.round_seconds - before_tick.round_seconds) > 5]
-        late_ticks = [t for t in risk_window_ticks if abs(t.round_seconds - before_tick.round_seconds) <= 2]
-
-        early_alive_prob = 0.0
-        late_alive_prob = 0.0
-
-        if early_ticks and player_idx < len(early_ticks[0].alive_pred):
-            early_alive_prob = early_ticks[0].alive_pred[player_idx]
-        if late_ticks and player_idx < len(late_ticks[0].alive_pred):
-            late_alive_prob = late_ticks[0].alive_pred[player_idx]
-
-        if early_ticks:
-            alive_prob_drop = early_alive_prob - late_alive_prob
-
     risk_cfg = get_weight("risk_assessment.self_created_risk", {})
     forced_cfg = get_weight("risk_assessment.forced_risk", {})
 
@@ -103,6 +80,8 @@ def assess_death_risk(
     alive_prob_low = risk_cfg.get("alive_prob_low_threshold", 0.40)
     alive_prob_window = risk_cfg.get("alive_prob_window_seconds", 8)
 
+    # Calculate alive probability drop (early vs late in the risk window)
+    alive_prob_drop = 0.0
     early_ticks = [t for t in risk_window_ticks if (before_tick.round_seconds - t.round_seconds) <= alive_prob_window]
     early_alive = 0.75
     late_alive = 0.75
@@ -113,6 +92,7 @@ def assess_death_risk(
         if probs:
             early_alive = probs[0]
             late_alive = probs[-1] if len(probs) > 1 else probs[0]
+            alive_prob_drop = early_alive - late_alive
 
     early_high_late_low = early_alive >= alive_prob_high and late_alive <= alive_prob_low
 

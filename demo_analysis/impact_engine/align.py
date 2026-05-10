@@ -210,13 +210,31 @@ def get_player_team(player_name: str, team1_players: list[str], team2_players: l
 def get_player_side_win_rate(
     win_rate: float,
     player_name: str,
-    team1_players: list[str]
+    team1_players: list[str],
+    team1_on_ct: bool
 ) -> float:
-    """Get win rate from player's perspective (own side = 1.0)."""
-    if player_name in team1_players:
-        return win_rate
+    """Get win rate from player's perspective (own side = 1.0).
+    
+    Args:
+        win_rate: CT win rate
+        player_name: Player name
+        team1_players: List of team1 players
+        team1_on_ct: If True, team1 is playing as CT in this round
+    """
+    player_on_team1 = player_name in team1_players
+    
+    if team1_on_ct:
+        # team1 is CT, team2 is T
+        if player_on_team1:
+            return win_rate  # player is CT
+        else:
+            return 1.0 - win_rate  # player is T
     else:
-        return 1.0 - win_rate
+        # team1 is T, team2 is CT
+        if player_on_team1:
+            return 1.0 - win_rate  # player is T
+        else:
+            return win_rate  # player is CT
 
 
 def find_death_trade_kill(

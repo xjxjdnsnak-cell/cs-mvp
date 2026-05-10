@@ -37,7 +37,8 @@ def calculate_win_rate_delta(
     event: GameEvent,
     before_tick: PredictionTick | None,
     after_tick: PredictionTick | None,
-    team1_players: list[str]
+    team1_players: list[str],
+    team1_on_ct: bool
 ) -> tuple[float, float, float]:
     """
     Calculate win rate delta for an event.
@@ -47,10 +48,10 @@ def calculate_win_rate_delta(
         return 0.5, 0.5, 0.0
 
     before_wr = get_player_side_win_rate(
-        before_tick.ct_win_rate, event.player, team1_players
+        before_tick.ct_win_rate, event.player, team1_players, team1_on_ct
     )
     after_wr = get_player_side_win_rate(
-        after_tick.ct_win_rate, event.player, team1_players
+        after_tick.ct_win_rate, event.player, team1_players, team1_on_ct
     )
 
     delta = after_wr - before_wr
@@ -74,7 +75,7 @@ def calculate_kill_impact(
     )
 
     before_wr, after_wr, win_rate_delta = calculate_win_rate_delta(
-        event, before_tick, after_tick, round_context.team1_players
+        event, before_tick, after_tick, round_context.team1_players, round_context.team1_on_ct
     )
     impact.before_win_rate = before_wr
     impact.after_win_rate = after_wr
@@ -151,7 +152,7 @@ def calculate_death_impact(
     )
 
     before_wr, after_wr, win_rate_delta = calculate_win_rate_delta(
-        event, before_tick, after_tick, round_context.team1_players
+        event, before_tick, after_tick, round_context.team1_players, round_context.team1_on_ct
     )
     impact.before_win_rate = before_wr
     impact.after_win_rate = after_wr
@@ -361,10 +362,10 @@ def calculate_player_round_impact(
         first_tick = round_context.ticks[0]
         last_tick = round_context.ticks[-1]
         player_round.round_win_rate_start = get_player_side_win_rate(
-            first_tick.ct_win_rate, player_name, round_context.team1_players
+            first_tick.ct_win_rate, player_name, round_context.team1_players, round_context.team1_on_ct
         )
         player_round.round_win_rate_end = get_player_side_win_rate(
-            last_tick.ct_win_rate, player_name, round_context.team1_players
+            last_tick.ct_win_rate, player_name, round_context.team1_players, round_context.team1_on_ct
         )
 
     return player_round
@@ -416,7 +417,9 @@ def calculate_player_match_impact(
     total_score = model_impact_score * model_weight + rule_quality_score * rule_weight
 
     rating = total_score
-    rating_0_100 = max(0.0, min(100.0, (rating + 10) * 5))
+    # Normalize to 0-100 using a more reasonable approach
+    # Base 50, plus total_score scaled by a reasonable factor
+    rating_0_100 = max(0.0, min(100.0, 50 + rating * 2.5))
 
     kills_total = sum(len(ri.kills) for ri in round_impacts)
     deaths_total = sum(len(ri.deaths) for ri in round_impacts)

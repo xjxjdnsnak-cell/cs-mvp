@@ -34,12 +34,33 @@ class PredictionTick:
     is_bomb_planted: bool = False
     bomb_planted_time: float | None = None
 
-    def get_player_side_win_rate(self, player_name: str, team1_players: list[str]) -> float:
-        """Get win rate from player's perspective."""
-        if player_name in team1_players:
-            return self.ct_win_rate
+    def get_player_side_win_rate(
+        self, 
+        player_name: str, 
+        team1_players: list[str],
+        team1_on_ct: bool
+    ) -> float:
+        """Get win rate from player's perspective.
+        
+        Args:
+            player_name: Player name
+            team1_players: List of team1 players
+            team1_on_ct: If True, team1 is playing as CT in this round
+        """
+        player_on_team1 = player_name in team1_players
+        
+        if team1_on_ct:
+            # team1 is CT, team2 is T
+            if player_on_team1:
+                return self.ct_win_rate  # player is CT
+            else:
+                return 1.0 - self.ct_win_rate  # player is T
         else:
-            return 1.0 - self.ct_win_rate
+            # team1 is T, team2 is CT
+            if player_on_team1:
+                return 1.0 - self.ct_win_rate  # player is T
+            else:
+                return self.ct_win_rate  # player is CT
 
     def get_alive_pred_for_player(self, player_name: str, name_to_idx: dict[str, int]) -> float:
         """Get alive prediction probability for a player."""

@@ -130,11 +130,15 @@ def is_opening_event(
 def check_trade(
     death_event: GameEvent,
     all_events: list[GameEvent],
+    team1_players: list[str],
+    team2_players: list[str],
     trade_window: float = 5.0
 ) -> tuple[bool, bool]:
     """
     Check if death was traded (someone avenged within window).
-    Returns (was_traded, is_trade_kill).
+    Returns (was_traded, is_trade_kill_for_this_event).
+    
+    Note: For a death event, is_trade_kill_for_this_event will always be False.
     """
     if death_event.event_type != EventType.DEATH:
         return False, False
@@ -151,15 +155,90 @@ def check_trade(
 
     was_traded = trade_kill_event is not None
 
-    for event in all_events:
-        if event.event_type == EventType.KILL and event.player == victim:
-            avenged_event = find_death_trade_kill(
-                death_event.tick, victim, killer, all_events, trade_window
-            )
-            if avenged_event is not None:
-                return True, True
-
     return was_traded, False
+
+
+def is_trade_kill(
+    kill_event: GameEvent,
+    all_events: list[GameEvent],
+    team1_players: list[str],
+    team2_players: list[str],
+    trade_window: float = 5.0
+) -> bool:
+    """
+    Check if this kill is a trade kill (killer avenged a teammate within window).
+    A trade kill happens when a killer kills someone after a teammate was killed by that person.
+    """
+    if kill_event.event_type != EventType.KILL:
+        return False
+
+    killer = kill_event.player
+    victim = kill_event.other_player
+
+    if not victim:
+        return False
+
+    killer_team = "team1" if killer in team1_players else "team2"
+
+    # Find a recent death of a teammate, killed by the victim we're now killing
+    for event in all_events:
+        if event.event_type != EventType.DEATH:
+            continue
+        
+        dead_player = event.player
+        dead_player_team = "team1" if dead_player in team1_players else "team2"
+        
+        if dead_player_team != killer_team:
+            continue  # Not a teammate
+        
+        time_gap = kill_event.tick - event.tick
+        if 0 < time_gap <= trade_window:
+            if event.other_player == victim:
+                # Teammate was killed by the same guy we're now killing - this is a trade!
+                return True
+
+    return False
+
+
+def is_opening_death(
+    event: GameEvent,
+    ticks: list[PredictionTick],
+    team1_players: list[str],
+    team2_players: list[str],
+    window_seconds: float = 5.0
+) -> bool:
+    """Check if this is an opening death (both players alive at round start)."""
+    if event.event_type != EventType.DEATH:
+        return False
+
+    if not ticks:
+        return False
+
+    start_tick = ticks[0]
+    team1_alive, team2_alive = get_alive_count_at_tick(start_tick, team1_players, team2_players)
+
+    if team1_alive + team2_alive < 9:
+        return False
+
+    if event.tick > window_seconds:
+        return False
+
+    victim = event.player
+    killer = event.other_player
+
+    if not killer:
+        return False
+
+    victim_alive = False
+    killer_alive = False
+    for p in start_tick.players_info:
+        name = p.get("name")
+        if name == victim and p.get("is_alive", False):
+            victim_alive = True
+        if name == killer and p.get("is_alive", False):
+            killer_alive = True
+
+    return victim_alive and killer_alive
 
 
 def is_exit_frag(
@@ -406,15 +485,28 @@ def label_event(
         event, round_context.ticks, round_context.team1_players, round_context.team2_players
     )
 
-    if event.event_type == EventType.DEATH and labels.opening_kill:
-        labels.opening_death = True
+    labels.opening_death = is_opening_death(
+        event, round_context.ticks, round_context.team1_players, round_context.team2_players
+    )
 
-    was_traded, is_trade = check_trade(event, round_context.events, get_weight("trade_impact.trade_window_seconds", 5.0))
     if event.event_type == EventType.DEATH:
+        was_traded, _ = check_trade(
+            event, 
+            round_context.events, 
+            round_context.team1_players,
+            round_context.team2_players,
+            get_weight("trade_impact.trade_window_seconds", 5.0)
+        )
         labels.traded_death = was_traded
         labels.untraded_death = not was_traded
-    if event.event_type == EventType.KILL and is_trade:
-        labels.trade_kill = True
+    if event.event_type == EventType.KILL:
+        labels.trade_kill = is_trade_kill(
+            event, 
+            round_context.events, 
+            round_context.team1_players,
+            round_context.team2_players,
+            get_weight("trade_impact.trade_window_seconds", 5.0)
+        )
 
     labels.exit_frag = is_exit_frag(event, before_tick, round_context)
 

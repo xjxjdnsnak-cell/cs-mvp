@@ -32,7 +32,7 @@ IMPACT_WEIGHTS = {
         "man_advantage_threshold": 3,
     },
     "death_impact": {
-        "win_rate_delta_multiplier": 1.0,
+        "win_rate_delta_multiplier": 100.0,
         "forced_risk_bonus": 0.6,
         "self_created_risk_penalty": -1.2,
         "traded_death_bonus": 0.8,

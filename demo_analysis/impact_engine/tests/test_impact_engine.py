@@ -24,6 +24,8 @@ from demo_analysis.impact_engine.risk import (
 )
 from demo_analysis.impact_engine.rules import (
     is_opening_event,
+    is_opening_death,
+    is_trade_kill,
     check_hard_duel_win,
     check_easy_duel_loss,
     is_low_impact_kill,
@@ -127,13 +129,21 @@ class TestFindTicksBefore(unittest.TestCase):
 class TestGetPlayerSideWinRate(unittest.TestCase):
     """Test get_player_side_win_rate function."""
 
-    def test_team1_player(self):
-        result = get_player_side_win_rate(0.6, "player1", ["player1", "player2"])
+    def test_team1_player_team1_on_ct_true(self):
+        result = get_player_side_win_rate(0.6, "player1", ["player1", "player2"], True)
         self.assertEqual(result, 0.6)
 
-    def test_team2_player(self):
-        result = get_player_side_win_rate(0.6, "player3", ["player1", "player2"])
+    def test_team2_player_team1_on_ct_true(self):
+        result = get_player_side_win_rate(0.6, "player3", ["player1", "player2"], True)
         self.assertEqual(result, 0.4)
+
+    def test_team1_player_team1_on_ct_false(self):
+        result = get_player_side_win_rate(0.6, "player1", ["player1", "player2"], False)
+        self.assertEqual(result, 0.4)
+
+    def test_team2_player_team1_on_ct_false(self):
+        result = get_player_side_win_rate(0.6, "player3", ["player1", "player2"], False)
+        self.assertEqual(result, 0.6)
 
 
 class TestDetermineRoundLabel(unittest.TestCase):
@@ -532,6 +542,153 @@ class TestLowImpactKill(unittest.TestCase):
 
         result = is_low_impact_kill(event, kill_tick, round_context, name_to_idx)
         self.assertTrue(result)
+
+
+class TestOpeningDeath(unittest.TestCase):
+    """Test opening death detection."""
+
+    def test_opening_death_detected(self):
+        """Opening death should be correctly detected."""
+        event = GameEvent(
+            event_type=EventType.DEATH,
+            tick=3.0,
+            player="player1",
+            other_player="player6",
+        )
+
+        start_tick = PredictionTick(
+            round_seconds=0.5,
+            ct_win_rate=0.5,
+            alive_pred=[0.9, 0.9, 0.8, 0.8, 0.7, 0.7, 0.6, 0.6, 0.5, 0.5],
+            next_kill=[],
+            next_death=[],
+            duel=None,
+            players_info=[
+                {"name": "player1", "is_alive": True},
+                {"name": "player2", "is_alive": True},
+                {"name": "player3", "is_alive": True},
+                {"name": "player4", "is_alive": True},
+                {"name": "player5", "is_alive": True},
+                {"name": "player6", "is_alive": True},
+                {"name": "player7", "is_alive": True},
+                {"name": "player8", "is_alive": True},
+                {"name": "player9", "is_alive": True},
+                {"name": "player10", "is_alive": True},
+            ],
+        )
+
+        result = is_opening_death(
+            event,
+            [start_tick],
+            ["player1", "player2", "player3", "player4", "player5"],
+            ["player6", "player7", "player8", "player9", "player10"],
+        )
+        self.assertTrue(result)
+
+    def test_not_opening_death_late_tick(self):
+        """Deaths after window should not be opening death."""
+        event = GameEvent(
+            event_type=EventType.DEATH,
+            tick=6.0,
+            player="player1",
+            other_player="player6",
+        )
+
+        start_tick = PredictionTick(
+            round_seconds=0.5,
+            ct_win_rate=0.5,
+            alive_pred=[],
+            next_kill=[],
+            next_death=[],
+            duel=None,
+            players_info=[],
+        )
+
+        result = is_opening_death(
+            event,
+            [start_tick],
+            ["player1", "player2", "player3", "player4", "player5"],
+            ["player6", "player7", "player8", "player9", "player10"],
+        )
+        self.assertFalse(result)
+
+
+class TestTradeKill(unittest.TestCase):
+    """Test trade kill detection."""
+
+    def test_trade_kill_detected(self):
+        """Trade kill should be detected when a teammate is avenged quickly."""
+        # Event: player2 kills player6 to avenge player1's death
+        kill_event = GameEvent(
+            event_type=EventType.KILL,
+            tick=8.0,
+            player="player2",
+            other_player="player6",
+        )
+
+        # Earlier event: player1 was killed by player6
+        death_event = GameEvent(
+            event_type=EventType.DEATH,
+            tick=5.0,
+            player="player1",
+            other_player="player6",
+        )
+
+        result = is_trade_kill(
+            kill_event,
+            [death_event],
+            ["player1", "player2", "player3", "player4", "player5"],
+            ["player6", "player7", "player8", "player9", "player10"],
+        )
+        self.assertTrue(result)
+
+    def test_not_trade_kill_wrong_victim(self):
+        """Kill should not be trade kill if wrong person is killed."""
+        kill_event = GameEvent(
+            event_type=EventType.KILL,
+            tick=8.0,
+            player="player2",
+            other_player="player7",  # Not player6
+        )
+
+        death_event = GameEvent(
+            event_type=EventType.DEATH,
+            tick=5.0,
+            player="player1",
+            other_player="player6",
+        )
+
+        result = is_trade_kill(
+            kill_event,
+            [death_event],
+            ["player1", "player2", "player3", "player4", "player5"],
+            ["player6", "player7", "player8", "player9", "player10"],
+        )
+        self.assertFalse(result)
+
+    def test_not_trade_kill_too_late(self):
+        """Kill should not be trade kill if too late after teammate death."""
+        kill_event = GameEvent(
+            event_type=EventType.KILL,
+            tick=20.0,  # Too late
+            player="player2",
+            other_player="player6",
+        )
+
+        death_event = GameEvent(
+            event_type=EventType.DEATH,
+            tick=5.0,
+            player="player1",
+            other_player="player6",
+        )
+
+        result = is_trade_kill(
+            kill_event,
+            [death_event],
+            ["player1", "player2", "player3", "player4", "player5"],
+            ["player6", "player7", "player8", "player9", "player10"],
+        )
+        self.assertFalse(result)
 
 
 if __name__ == "__main__":
