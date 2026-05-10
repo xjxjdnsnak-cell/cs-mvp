@@ -175,6 +175,54 @@ http://127.0.0.1:7860
 - Team-side context for LLM:
   per-round attack/defense roles, first-half/second-half side assignment and half scores.
 
+## 🎯 Impact Engine
+
+The Impact Engine provides advanced player impact analysis based on CS-NET's prediction outputs. It evaluates each player's real influence in each round, distinguishing between kills, deaths, trades, and objective plays.
+
+### Key Features
+
+- **RWI (Round Win Impact)**: Measures how each action affected team win probability
+- **Death Risk Assessment**: Distinguishes self-created risk from forced risk deaths
+- **Rule-Based Labeling**: Identifies opening kills, trades, clutch plays, and more
+- **Comprehensive Scoring**: Combines model-based and rule-based quality scores
+- **Chinese Reports**: Generates detailed Chinese-language post-match reports
+
+### Quick Start
+
+```bash
+# Analyze a demo and generate reports
+python -m demo_analysis.impact_engine.cli \
+  --analysis-json output/analysis.json \
+  --out report.md \
+  --json-out report.json
+```
+
+### Output
+
+1. **Markdown Report** (`--out`): Detailed Chinese analysis with:
+   - Per-player ratings (0-100)
+   - Model Impact Score / Rule Quality Score
+   - High impact rounds count
+   - Death analysis (bad deaths, self-created risk, forced risk)
+   - Hard Duel Wins / Easy Duel Losses
+   - Key positive/negative events
+   - Improvement suggestions
+
+2. **JSON Output** (`--json-out`): Structured data for further processing
+
+### Scoring Formula
+
+```
+Final Score = Model Impact Score × 0.65 + Rule Quality Score × 0.35
+
+Model Impact Score = RWI总和 + Hard Duel Wins × 0.8 - Easy Duel Losses × 0.6
+Rule Quality Score = 补枪加分 + 残局加分 - 白给死亡扣分 - 自造风险扣分
+```
+
+### Configuration
+
+All weights are in `demo_analysis/impact_engine/config.py`. Adjust to tune scoring sensitivity.
+
 ## 🙏 Acknowledgements
 
 The bundled 2D replay viewer under `demo_analysis/static/viewer/` is a lightly

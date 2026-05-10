@@ -159,6 +159,54 @@ http://127.0.0.1:7860
 - 自动记住用户输入（浏览器本地存储）：API Key、模型名、Base URL、Temperature、设备、模型目录、Batch Size、语言。
 - 为 LLM 提供攻防上下文，降低幻觉：每回合攻防归属、上下半场 CT/T 归属与分半比分。
 
+## 🎯 Impact Engine 影响力评分引擎
+
+Impact Engine 在 CS-NET 模型预测的基础上，提供深度的玩家回合影响力分析。它能评估每名玩家在每一回合中的真实贡献，区分自造风险死亡与合理高风险死亡。
+
+### 核心功能
+
+- **RWI（回合胜率影响）**：衡量每个行为对队伍胜率的影响
+- **死亡风险评估**：区分自造风险与被迫高风险死亡
+- **规则标签识别**：识别首杀、补枪、残局、出口杀等行为
+- **综合评分**：结合模型影响分和规则质量分
+- **中文复盘报告**：生成详细的中文赛后分析报告
+
+### 快速开始
+
+```bash
+# 分析 demo 并生成报告
+python -m demo_analysis.impact_engine.cli \
+  --analysis-json output/analysis.json \
+  --out report.md \
+  --json-out report.json
+```
+
+### 输出内容
+
+1. **Markdown 报告** (`--out`)：详细的中文分析，包含：
+   - 每名玩家评分 (0-100)
+   - 模型影响分 / 规则质量分
+   - 高影响回合数
+   - 死亡分析（白给死亡、自造风险、合理高风险）
+   - Hard Duel Win / Easy Duel Loss 次数
+   - 关键正面/负面行为
+   - 改进建议
+
+2. **JSON 输出** (`--json-out`)：结构化数据，便于后续处理
+
+### 评分公式
+
+```
+最终评分 = 模型影响分 × 0.65 + 规则质量分 × 0.35
+
+模型影响分 = RWI总和 + Hard Duel Wins × 0.8 - Easy Duel Losses × 0.6
+规则质量分 = 补枪加分 + 残局加分 - 白给死亡扣分 - 自造风险扣分
+```
+
+### 配置说明
+
+所有评分权重都在 `demo_analysis/impact_engine/config.py` 中，可以直接调整参数来修改评分灵敏度。
+
 ## 致谢
 
 Web App 中的 2D 回放器（`demo_analysis/static/viewer/` 下的全部文件）是对优秀开源项目 **[sparkoo/csgo-2d-demo-viewer](https://github.com/sparkoo/csgo-2d-demo-viewer)** 的轻度改造版本，作者为 **Michal Vala**，采用 MIT License 发布（© 2023 Michal Vala）。回放器的解析、渲染和交互能力都来自上游，我们只是把它的静态资源路径接到 Flask 的 `/viewer/` 路由下，并将 CS-NET 的逐 tick 预测叠加到时间线上。**这些技术成果与使用体验的核心贡献均应归功于上游作者。**
