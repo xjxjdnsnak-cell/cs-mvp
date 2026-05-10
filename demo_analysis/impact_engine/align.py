@@ -74,7 +74,8 @@ def build_prediction_tick(tick_data: dict[str, Any]) -> PredictionTick:
 def extract_kill_events(
     round_data: dict[str, Any],
     team1_players: list[str],
-    team2_players: list[str]
+    team2_players: list[str],
+    team1_on_ct: bool = True
 ) -> list[GameEvent]:
     """Extract kill events from round data."""
     events = []
@@ -85,7 +86,12 @@ def extract_kill_events(
         if not killer or not victim:
             continue
 
-        attacker_team = "CT" if killer in team1_players else "T"
+        # 根据 team1_on_ct 正确判断 CT/T
+        killer_is_team1 = killer in team1_players
+        if team1_on_ct:
+            attacker_team = "CT" if killer_is_team1 else "T"
+        else:
+            attacker_team = "T" if killer_is_team1 else "CT"
 
         event = GameEvent(
             event_type=EventType.KILL,
@@ -104,13 +110,20 @@ def extract_kill_events(
         )
         events.append(event)
 
+        # 死亡事件的 team_num 也同样处理
+        victim_is_team1 = victim in team1_players
+        if team1_on_ct:
+            victim_team = "CT" if victim_is_team1 else "T"
+        else:
+            victim_team = "T" if victim_is_team1 else "CT"
+
         death_event = GameEvent(
             event_type=EventType.DEATH,
             tick=safe_float(kill.get("round_seconds", 0.0)),
             player=victim,
             other_player=killer,
             weapon=kill.get("weapon"),
-            team_num="CT" if victim in team1_players else "T",
+            team_num=victim_team,
         )
         events.append(death_event)
 
@@ -167,7 +180,7 @@ def build_round_context(
     winner = round_data.get("winner", "Unknown")
 
     events = []
-    events.extend(extract_kill_events(round_data, team1_players, team2_players))
+    events.extend(extract_kill_events(round_data, team1_players, team2_players, team1_on_ct))
     events.extend(extract_bomb_plant_events(round_data, team1_players, team2_players))
 
     events.sort(key=lambda e: e.tick)
@@ -376,9 +389,4 @@ def get_duel_probability(
 
 def was_bomb_planted_before_tick(ticks: list[PredictionTick], target_time: float) -> bool:
     """Check if bomb was planted before a given time."""
-    for tick in ticks:
-        if tick.round_seconds >= target_time:
-            continue
-        if tick.is_bomb_planted:
-            return True
-    return False
+    return any(tick.round_seconds <= target_time and tick.is_bomb_planted for tick in ticks)

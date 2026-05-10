@@ -415,20 +415,25 @@ def is_post_plant_throw_death(
     if not was_bomb_planted_before_tick(round_context.ticks, event.tick):
         return False
 
-    bomb_planted = was_bomb_planted_before_tick(round_context.ticks, event.tick)
-    if not bomb_planted:
-        return False
-
     team1_alive, team2_alive = get_alive_count_at_tick(
         before_tick, round_context.team1_players, round_context.team2_players
     )
 
     player_is_on_team1 = event.player in round_context.team1_players
-    t_side = "team1" if round_context.team1_on_ct else "team2"
-    player_is_t = player_is_on_team1 if t_side == "team1" else not player_is_on_team1
+    
+    if round_context.team1_on_ct:
+        # team1 是 CT，team2 是 T
+        t_side = "team2"
+        ct_side = "team1"
+    else:
+        # team1 是 T，team2 是 CT
+        t_side = "team1"
+        ct_side = "team2"
+        
+    player_is_t = (t_side == "team1" and player_is_on_team1) or (t_side == "team2" and not player_is_on_team1)
 
     t_alive = team1_alive if t_side == "team1" else team2_alive
-    ct_alive = team2_alive if t_side == "team1" else team1_alive
+    ct_alive = team1_alive if ct_side == "team1" else team2_alive
 
     if player_is_t and ct_alive <= 2 and t_alive >= ct_alive:
         return True

@@ -379,6 +379,7 @@ def calculate_player_match_impact(
 ) -> PlayerMatchImpact:
     """Calculate complete match impact for a player."""
     thresholds = get_weight("round_impact_thresholds", {})
+    round_count = len(round_impacts) if len(round_impacts) > 0 else 1
 
     high_impact_rounds = sum(1 for ri in round_impacts if ri.round_total_impact >= thresholds.get("high_impact", 1.5))
     positive_rounds = sum(1 for ri in round_impacts if ri.round_total_impact >= thresholds.get("positive", 0.5))
@@ -417,9 +418,20 @@ def calculate_player_match_impact(
     total_score = model_impact_score * model_weight + rule_quality_score * rule_weight
 
     rating = total_score
-    # Normalize to 0-100 using a more reasonable approach
-    # Base 50, plus total_score scaled by a reasonable factor
-    rating_0_100 = max(0.0, min(100.0, 50 + rating * 2.5))
+    # 使用按回合数归一化的方法
+    total_round_impact = sum(ri.round_total_impact for ri in round_impacts)
+    avg_round_impact = total_round_impact / round_count
+
+    # 基础 50 分，加上平均回合影响放大
+    rating_0_100 = 50 + avg_round_impact * 10
+    
+    # 加上高影响回合和送人头回合的修正
+    rating_0_100 += high_impact_rounds * 3
+    rating_0_100 -= throw_rounds * 3
+    rating_0_100 -= self_created_risk_deaths * 1
+    
+    # 限制在 0-100 之间
+    rating_0_100 = max(0.0, min(100.0, rating_0_100))
 
     kills_total = sum(len(ri.kills) for ri in round_impacts)
     deaths_total = sum(len(ri.deaths) for ri in round_impacts)
