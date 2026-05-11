@@ -10,6 +10,7 @@ from .models import (
     PlayerRoundImpact,
     RiskType,
 )
+from .utility_flash import flash_blind_phrase
 
 
 def format_percent(value: float) -> str:
@@ -22,6 +23,331 @@ def format_delta(value: float) -> str:
     if value >= 0:
         return f"+{value:.1%}"
     return f"{value:.1%}"
+
+
+def summarize_flash_counts(player: PlayerMatchImpact) -> dict[str, int]:
+    labels = [label for ri in player.round_impacts for flash in ri.flash_events for label in flash.labels]
+    return {
+        "strong_blinds": sum(1 for label in labels if label == "strong_blind"),
+        "full_blinds": sum(1 for label in labels if label == "full_blind"),
+        "partial_conversions": sum(
+            1 for ri in player.round_impacts for flash in ri.flash_events
+            if "partial_blind" in flash.labels and "converted_flash" in flash.labels
+        ),
+        "forced_turn_kills": sum(1 for label in labels if label == "forced_turn_kill"),
+        "no_effect_weak_flashes": sum(
+            1 for ri in player.round_impacts for flash in ri.flash_events
+            if "weak_flash" in flash.labels and "no_flash_effect" in flash.labels
+        ),
+        "harmless_team_flashes": sum(1 for label in labels if label == "harmless_team_flash"),
+        "effective_team_flashes": sum(1 for label in labels if label == "effective_team_flash"),
+        "team_flash_with_conversions": sum(1 for label in labels if label == "team_flash_with_conversion"),
+        "severe_team_flashes": sum(1 for label in labels if label == "severe_team_flash"),
+    }
+
+
+def describe_flash_event(event: dict[str, Any]) -> str:
+    round_id = event.get("round", "?")
+    labels = event.get("labels", [])
+    enemies = event.get("affected_enemies") or []
+    teammates = event.get("affected_teammates") or []
+    converted = event.get("converted_kills") or []
+
+    if "forced_turn_kill" in labels:
+        target = enemies[0].get("player", "敌人") if enemies else "敌人"
+        return f"第 {round_id} 回合：该闪光没有造成明显白屏，但迫使 {target} 转身躲闪，随后被击杀，判定为 forced_turn_kill。"
+
+    if enemies:
+        enemy = enemies[0]
+        blind = safe_float(enemy.get("effective_blind"), 0.0)
+        phrase = flash_blind_phrase(blind)
+        target = enemy.get("player", "敌人")
+        if converted:
+            return f"第 {round_id} 回合：该闪光造成 {target} {blind:.1f} 秒{phrase}，随后完成击杀转化，判定为 converted_flash。"
+        if "no_flash_effect" in labels:
+            return f"第 {round_id} 回合：敌人仅受到 {blind:.1f} 秒轻微白屏，且无后续交火收益，判定为 weak_flash/no_flash_effect。"
+        return f"第 {round_id} 回合：该闪光造成 {target} {blind:.1f} 秒{phrase}，标签为 {', '.join(labels)}。"
+
+    if teammates:
+        teammate = teammates[0]
+        blind = safe_float(teammate.get("effective_blind"), 0.0)
+        phrase = flash_blind_phrase(blind)
+        target = teammate.get("player", "队友")
+        if "team_flash_with_conversion" in labels:
+            return f"第 {round_id} 回合：队友 {target} 受到 {blind:.1f} 秒{phrase}，但我方 3 秒内完成击杀，判定为 effective_team_flash，不扣分。"
+        if "severe_team_flash" in labels:
+            return f"第 {round_id} 回合：队友 {target} 被 {blind:.1f} 秒{phrase}且处于高风险状态，判定为 severe_team_flash。"
+        if "harmless_team_flash" in labels:
+            return f"第 {round_id} 回合：队友 {target} 受到 {blind:.1f} 秒{phrase}，没有影响进攻，判定为 harmless_team_flash。"
+        return f"第 {round_id} 回合：队友 {target} 受到 {blind:.1f} 秒{phrase}，标签为 {', '.join(labels)}。"
+
+    return f"第 {round_id} 回合：闪光标签为 {', '.join(labels)}。"
+
+
+def generate_flash_quality_section(player: PlayerMatchImpact) -> list[str]:
+    counts = summarize_flash_counts(player)
+    if player.flash_score == 0 and not any(counts.values()):
+        return []
+
+    lines = []
+    lines.append("### 闪光弹质量")
+    lines.append("")
+    lines.append(f"- 闪光弹分项: {player.flash_score:.1f}")
+    lines.append(f"- 有效强白次数: {counts['strong_blinds']}")
+    if counts["full_blinds"] > 0:
+        lines.append(f"- 高质量全白次数: {counts['full_blinds']}")
+    else:
+        lines.append("- 高质量强闪次数: 0")
+    lines.append(f"- 半白但有转化次数: {counts['partial_conversions']}")
+    lines.append(f"- forced_turn_kill 次数: {counts['forced_turn_kills']}")
+    lines.append(f"- 无意义弱闪次数: {counts['no_effect_weak_flashes']}")
+    lines.append(f"- harmless_team_flash 次数: {counts['harmless_team_flashes']}")
+    lines.append(f"- effective_team_flash 次数: {counts['effective_team_flashes']}")
+    lines.append(f"- team_flash_with_conversion 次数: {counts['team_flash_with_conversions']}")
+    lines.append(f"- severe_team_flash 次数: {counts['severe_team_flashes']}")
+    lines.append("")
+
+    if player.positive_flash_events:
+        lines.append("代表性正面闪光：")
+        for event in player.positive_flash_events[:2]:
+            lines.append(f"- {describe_flash_event(event)}")
+        lines.append("")
+
+    if player.negative_flash_events:
+        lines.append("代表性负面闪光：")
+        for event in player.negative_flash_events[:2]:
+            lines.append(f"- {describe_flash_event(event)}")
+        lines.append("")
+
+    return lines
+
+
+def summarize_smoke_counts(player: PlayerMatchImpact) -> dict[str, int]:
+    labels = [label for ri in player.round_impacts for smoke in ri.smoke_events for label in smoke.labels]
+    return {
+        "complete_blocks": sum(1 for label in labels if label == "complete_block_smoke"),
+        "partial_blocks": sum(1 for label in labels if label == "partial_block_smoke"),
+        "leaky_smokes": sum(1 for label in labels if label == "leaky_smoke"),
+        "fatal_leaky_smokes": sum(1 for label in labels if label == "fatal_leaky_smoke"),
+        "blocking_teammate_smokes": sum(1 for label in labels if label == "blocking_teammate_smoke"),
+        "successful_fake_smokes": sum(1 for label in labels if label == "successful_fake_smoke"),
+        "converted_execute_smokes": sum(1 for label in labels if label == "converted_execute_smoke"),
+    }
+
+
+def describe_smoke_event(event: dict[str, Any]) -> str:
+    round_id = event.get("round", "?")
+    labels = event.get("labels", [])
+    reasons = event.get("reasons") or []
+    intent = event.get("intent", "unknown_smoke")
+
+    if "fatal_leaky_smoke" in labels:
+        return (
+            f"第 {round_id} 回合：该烟存在漏缝并制造错误安全感，队友依赖它过点时被缝隙击杀/抽死，"
+            "判定为 fatal_leaky_smoke。"
+        )
+    if "blocking_teammate_smoke" in labels:
+        return f"第 {round_id} 回合：该烟挡住己方关键路线或补枪视线，判定为 blocking_teammate_smoke。"
+    if "successful_fake_smoke" in labels:
+        return f"第 {round_id} 回合：该烟没有直接用于进点，但诱发防守转点并帮助另一侧进攻，判定为 successful_fake_smoke。"
+    if "converted_execute_smoke" in labels:
+        return f"第 {round_id} 回合：该烟封线质量达标，并通过 gating 后帮助进点/下包，判定为 converted_execute_smoke。"
+    if "complete_block_smoke" in labels:
+        return f"第 {round_id} 回合：该烟完整封住关键枪线，标签为 {', '.join(labels)}。"
+    if "leaky_smoke" in labels:
+        return f"第 {round_id} 回合：该烟接近目标但主枪线存在漏缝，标签为 {', '.join(labels)}。"
+    if "missed_smoke" in labels:
+        return f"第 {round_id} 回合：该烟未封住关键枪线，不能只因落点接近目标而视为好烟。"
+    reason_text = reasons[0] if reasons else f"intent={intent}"
+    return f"第 {round_id} 回合：{reason_text}，标签为 {', '.join(labels)}。"
+
+
+def generate_smoke_quality_section(player: PlayerMatchImpact) -> list[str]:
+    counts = summarize_smoke_counts(player)
+    if player.smoke_score == 0 and not any(counts.values()):
+        return []
+
+    lines = []
+    lines.append("### 烟雾弹质量")
+    lines.append("")
+    lines.append(f"- 烟雾弹分项: {player.smoke_score:.1f}")
+    lines.append(f"- 高质量封线烟次数: {counts['complete_blocks']}")
+    lines.append(f"- partial_block_smoke 次数: {counts['partial_blocks']}")
+    lines.append(f"- leaky_smoke 次数: {counts['leaky_smokes']}")
+    lines.append(f"- fatal_leaky_smoke 次数: {counts['fatal_leaky_smokes']}")
+    lines.append(f"- blocking_teammate_smoke 次数: {counts['blocking_teammate_smokes']}")
+    lines.append(f"- successful_fake_smoke 次数: {counts['successful_fake_smokes']}")
+    lines.append(f"- converted_execute_smoke 次数: {counts['converted_execute_smokes']}")
+    lines.append("")
+
+    if player.positive_smoke_events:
+        lines.append("代表性正面烟：")
+        for event in player.positive_smoke_events[:2]:
+            lines.append(f"- {describe_smoke_event(event)}")
+        lines.append("")
+
+    if player.negative_smoke_events:
+        lines.append("代表性负面烟：")
+        for event in player.negative_smoke_events[:2]:
+            lines.append(f"- {describe_smoke_event(event)}")
+        lines.append("")
+
+    return lines
+
+
+def summarize_fire_counts(player: PlayerMatchImpact) -> dict[str, int]:
+    labels = [label for ri in player.round_impacts for fire in ri.fire_events for label in fire.labels]
+    return {
+        "successful_delays": sum(1 for label in labels if label == "successful_delay_fire"),
+        "anti_rush_fires": sum(1 for label in labels if label == "anti_rush_fire"),
+        "post_plant_fires": sum(1 for label in labels if label == "post_plant_fire"),
+        "anti_defuse_fires": sum(1 for label in labels if label == "anti_defuse_fire"),
+        "forced_position_fires": sum(1 for label in labels if label == "forced_position_fire"),
+        "kill_fires": sum(1 for label in labels if label == "kill_fire"),
+        "forced_smoke_extinguishes": sum(1 for label in labels if label == "forced_smoke_extinguish"),
+        "harmful_fires": sum(1 for label in labels if label == "harmful_fire"),
+    }
+
+
+def describe_fire_event(event: dict[str, Any]) -> str:
+    round_id = event.get("round", "?")
+    labels = event.get("labels", [])
+
+    if "harmful_fire" in labels:
+        return f"第 {round_id} 回合：该火烧到队友或破坏补枪/进点节奏，判定为 harmful_fire。"
+    if "teammate_blocking_fire" in labels:
+        return f"第 {round_id} 回合：该火挡住队友进点路线或补枪路径，判定为 teammate_blocking_fire。"
+    if "anti_defuse_fire" in labels:
+        return f"第 {round_id} 回合：炸弹已下，该火覆盖拆包区域或拆包路径，判定为 anti_defuse_fire。"
+    if "post_plant_fire" in labels and "forced_smoke_extinguish" in labels:
+        return f"第 {round_id} 回合：炸弹已下，该火迫使 CT 交烟灭火，判定为 post_plant_fire + forced_smoke_extinguish。"
+    if "forced_position_fire" in labels:
+        return f"第 {round_id} 回合：该火没有只按伤害计分，而是逼敌人离开强位并创造后续机会，判定为 forced_position_fire。"
+    if "anti_rush_fire" in labels or "successful_delay_fire" in labels:
+        return f"第 {round_id} 回合：该火覆盖关键入口，阻止 rush / 拖延进攻，判定为 anti_rush_fire。"
+    if "fake_pressure_fire" in labels:
+        return f"第 {round_id} 回合：该火用于制造一侧压力并诱导防守反应，判定为 fake_pressure_fire。"
+    if "kill_fire" in labels:
+        return f"第 {round_id} 回合：该火直接造成击杀，判定为 kill_fire。"
+    if "extinguished_no_value" in labels:
+        return f"第 {round_id} 回合：该火很快被烟灭且没有伤害、拖延或资源消耗价值，判定为 extinguished_no_value。"
+    return f"第 {round_id} 回合：火瓶/燃烧弹标签为 {', '.join(labels)}。"
+
+
+def generate_fire_quality_section(player: PlayerMatchImpact) -> list[str]:
+    counts = summarize_fire_counts(player)
+    if player.fire_score == 0 and not any(counts.values()):
+        return []
+
+    lines = []
+    lines.append("### 火瓶/燃烧弹质量")
+    lines.append("")
+    lines.append(f"- 火瓶/燃烧弹分项: {player.fire_score:.1f}")
+    lines.append(f"- 高价值拖延火次数: {counts['successful_delays']}")
+    lines.append(f"- anti_rush_fire 次数: {counts['anti_rush_fires']}")
+    lines.append(f"- post_plant_fire 次数: {counts['post_plant_fires']}")
+    lines.append(f"- anti_defuse_fire 次数: {counts['anti_defuse_fires']}")
+    lines.append(f"- forced_position_fire 次数: {counts['forced_position_fires']}")
+    lines.append(f"- kill_fire 次数: {counts['kill_fires']}")
+    lines.append(f"- forced_smoke_extinguish 次数: {counts['forced_smoke_extinguishes']}")
+    lines.append(f"- harmful_fire 次数: {counts['harmful_fires']}")
+    lines.append("")
+
+    if player.positive_fire_events:
+        lines.append("代表性正面火：")
+        for event in player.positive_fire_events[:2]:
+            lines.append(f"- {describe_fire_event(event)}")
+        lines.append("")
+
+    if player.negative_fire_events:
+        lines.append("代表性负面火：")
+        for event in player.negative_fire_events[:2]:
+            lines.append(f"- {describe_fire_event(event)}")
+        lines.append("")
+
+    return lines
+
+
+def summarize_he_counts(player: PlayerMatchImpact) -> dict[str, int]:
+    labels = [label for ri in player.round_impacts for he in ri.he_events for label in he.labels]
+    return {
+        "he_kills": sum(1 for label in labels if label == "kill_he"),
+        "anti_smoke_kills": sum(1 for label in labels if label in ("anti_smoke_he_direct_kill", "anti_smoke_route_he_kill")),
+        "anti_smoke_routes": sum(1 for label in labels if label == "anti_smoke_route_he"),
+        "objective_hes": sum(1 for label in labels if label in ("anti_defuse_he", "anti_plant_he")),
+        "anti_rush_hes": sum(1 for label in labels if label == "anti_rush_he"),
+        "nade_stack_hits": sum(1 for label in labels if label == "nade_stack_damage"),
+        "low_value_hes": sum(1 for label in labels if label == "low_value_he"),
+        "harmful_hes": sum(1 for label in labels if label == "harmful_he"),
+    }
+
+
+def describe_he_event(event: dict[str, Any]) -> str:
+    round_id = event.get("round", "?")
+    labels = event.get("labels", [])
+    damage_events = event.get("damage_events") or []
+    damage = sum(int(item.get("damage", 0)) for item in damage_events if not item.get("team_damage"))
+
+    if "anti_smoke_he_direct_kill" in labels:
+        return f"第 {round_id} 回合：该 HE 炸烟内/烟边目标并造成击杀，判定为 anti_smoke_he_direct_kill。"
+    if "anti_smoke_route_he_kill" in labels:
+        return f"第 {round_id} 回合：该 HE 针对烟后默认路线的预判雷造成击杀，判定为 anti_smoke_route_he_kill。"
+    if "anti_smoke_route_he" in labels:
+        return f"第 {round_id} 回合：该 HE 命中烟后默认路线的预判区域，判定为 anti_smoke_route_he。"
+    if "anti_smoke_he_direct" in labels:
+        return f"第 {round_id} 回合：该 HE 炸烟内/烟边目标并造成伤害，判定为 anti_smoke_he_direct。"
+    if "anti_defuse_he" in labels:
+        return f"第 {round_id} 回合：该 HE 落在炸弹附近，打断或阻止 CT 拆包，判定为 anti_defuse_he。"
+    if "anti_plant_he" in labels:
+        return f"第 {round_id} 回合：该 HE 覆盖下包点或下包路线，阻止/延迟下包，判定为 anti_plant_he。"
+    if "anti_rush_he" in labels:
+        return f"第 {round_id} 回合：该 HE 对 rush/聚集敌人造成群体压力并打乱推进，判定为 anti_rush_he。"
+    if "nade_stack_damage" in labels:
+        return f"第 {round_id} 回合：该 HE 与队友多雷配合同区命中，判定为 nade_stack_damage。"
+    if "harmful_he" in labels:
+        return f"第 {round_id} 回合：该 HE 伤害队友并造成严重后果，判定为 harmful_he。"
+    if "team_damage_he" in labels:
+        return f"第 {round_id} 回合：该 HE 造成队友伤害，判定为 team_damage_he。"
+    if "low_value_he" in labels:
+        return f"第 {round_id} 回合：该 HE 只造成 {damage} 点伤害，没有阻止行动或形成补杀，判定为 low_value_he。"
+    if "kill_he" in labels:
+        return f"第 {round_id} 回合：该 HE 直接造成击杀，判定为 kill_he。"
+    return f"第 {round_id} 回合：HE 标签为 {', '.join(labels)}。"
+
+
+def generate_he_quality_section(player: PlayerMatchImpact) -> list[str]:
+    counts = summarize_he_counts(player)
+    if player.he_score == 0 and not any(counts.values()) and player.he_damage_total == 0:
+        return []
+
+    lines = []
+    lines.append("### HE 手雷质量")
+    lines.append("")
+    lines.append(f"- HE 分项: {player.he_score:.1f}")
+    lines.append(f"- 总 HE 伤害: {player.he_damage_total}")
+    lines.append(f"- HE 击杀数: {counts['he_kills']}")
+    lines.append(f"- 高价值炸烟雷: {counts['anti_smoke_kills']}")
+    lines.append(f"- 烟后路线预判雷: {counts['anti_smoke_routes']}")
+    lines.append(f"- 阻止拆包/下包雷: {counts['objective_hes']}")
+    lines.append(f"- 反 rush 雷: {counts['anti_rush_hes']}")
+    lines.append(f"- 多雷配合: {counts['nade_stack_hits']}")
+    lines.append(f"- 低价值雷: {counts['low_value_hes']}")
+    lines.append(f"- 反效果雷: {counts['harmful_hes']}")
+    lines.append("")
+
+    if player.positive_he_events:
+        lines.append("代表性正面 HE：")
+        for event in player.positive_he_events[:2]:
+            lines.append(f"- {describe_he_event(event)}")
+        lines.append("")
+
+    if player.negative_he_events:
+        lines.append("代表性负面 HE：")
+        for event in player.negative_he_events[:2]:
+            lines.append(f"- {describe_he_event(event)}")
+        lines.append("")
+
+    return lines
 
 
 def get_player_summary(player: PlayerMatchImpact) -> str:
@@ -103,6 +429,11 @@ def generate_player_report(player: PlayerMatchImpact) -> str:
     lines.append(f"- 独狼持包死亡: {player.bomb_carrier_died_alone} 次")
     lines.append(f"- Easy Duel Loss: {player.easy_duel_losses} 次")
     lines.append("")
+
+    lines.extend(generate_flash_quality_section(player))
+    lines.extend(generate_smoke_quality_section(player))
+    lines.extend(generate_fire_quality_section(player))
+    lines.extend(generate_he_quality_section(player))
 
     if player.positive_kill_events or player.negative_death_events:
         lines.append("### 关键正面行为")
@@ -368,22 +699,7 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
         "players": [],
     }
 
-    # Report-level diagnostics for score calibration
-    model_impact_clip_count_min = 0
-    model_impact_clip_count_max = 0
-    rating_zero_count = 0
-    rating_hundred_count = 0
-
     for player in report.player_impacts:
-        if player.model_impact_score_raw < -50:
-            model_impact_clip_count_min += 1
-        if player.model_impact_score_raw > 50:
-            model_impact_clip_count_max += 1
-        if player.rating_0_100 <= 0.0:
-            rating_zero_count += 1
-        if player.rating_0_100 >= 100.0:
-            rating_hundred_count += 1
-
         player_data = {
             "player_name": player.player_name,
             "team": player.team,
@@ -420,37 +736,109 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
                 "bomb_carrier_died_alone": player.bomb_carrier_died_alone,
                 "easy_duel_losses": player.easy_duel_losses,
             },
+            "utility_stats": {
+                "flash": {
+                    "score": round(player.flash_score, 2),
+                    "effective_flashes": player.effective_flashes,
+                    "converted_flashes": player.converted_flashes,
+                    "forced_turn_kills": player.forced_turn_kills,
+                    "severe_team_flashes": player.severe_team_flashes,
+                    "harmless_team_flashes": player.harmless_team_flashes,
+                    "team_flash_with_conversions": player.team_flash_with_conversions,
+                },
+                "smoke": {
+                    "score": round(player.smoke_score, 2),
+                    "successful_fake_smokes": player.successful_fake_smokes,
+                    "fatal_leaky_smokes": player.fatal_leaky_smokes,
+                    "blocking_teammate_smokes": player.blocking_teammate_smokes,
+                    "converted_execute_smokes": player.converted_execute_smokes,
+                },
+                "fire": {
+                    "score": round(player.fire_score, 2),
+                    "anti_rush_fires": player.anti_rush_fires,
+                    "post_plant_fires": player.post_plant_fires,
+                    "anti_defuse_fires": player.anti_defuse_fires,
+                    "forced_position_fires": player.forced_position_fires,
+                    "kill_fires": player.kill_fires,
+                    "harmful_fires": player.harmful_fires,
+                    "forced_smoke_extinguishes": player.forced_smoke_extinguishes,
+                },
+                "he": {
+                    "score": round(player.he_score, 2),
+                    "damage_total": player.he_damage_total,
+                    "kills": player.he_kills,
+                    "anti_smoke_he_kills": player.anti_smoke_he_kills,
+                    "anti_smoke_route_hes": player.anti_smoke_route_hes,
+                    "anti_defuse_hes": player.anti_defuse_hes,
+                    "anti_plant_hes": player.anti_plant_hes,
+                    "anti_rush_hes": player.anti_rush_hes,
+                    "nade_stack_hits": player.nade_stack_hits,
+                    "low_value_hes": player.low_value_hes,
+                    "harmful_hes": player.harmful_hes,
+                },
+            },
+            "flash_events": [
+                {
+                    "round": event.get("round"),
+                    "tick": round(safe_float(event.get("tick")), 2),
+                    "impact": round(safe_float(event.get("impact")), 2),
+                    "labels": event.get("labels", []),
+                    "affected_enemies": event.get("affected_enemies", []),
+                    "affected_teammates": event.get("affected_teammates", []),
+                    "converted_kills": event.get("converted_kills", []),
+                    "reasons": event.get("reasons", []),
+                }
+                for event in (player.positive_flash_events + player.negative_flash_events)[:10]
+            ],
+            "smoke_events": [
+                {
+                    "round": event.get("round"),
+                    "tick": round(safe_float(event.get("tick")), 2),
+                    "impact": round(safe_float(event.get("impact")), 2),
+                    "intent": event.get("intent"),
+                    "labels": event.get("labels", []),
+                    "reasons": event.get("reasons", []),
+                    "target_matched": bool(event.get("target_matched", False)),
+                    "block_score": round(safe_float(event.get("block_score")), 2),
+                    "leak_risk": event.get("leak_risk"),
+                    "conversion_score": round(safe_float(event.get("conversion_score")), 2),
+                    "teammate_dependency": round(safe_float(event.get("teammate_dependency")), 2),
+                    "enemy_exploitation": round(safe_float(event.get("enemy_exploitation")), 2),
+                }
+                for event in (player.positive_smoke_events + player.negative_smoke_events)[:10]
+            ],
+            "fire_events": [
+                {
+                    "round": event.get("round"),
+                    "tick": round(safe_float(event.get("tick")), 2),
+                    "impact": round(safe_float(event.get("impact")), 2),
+                    "intent": event.get("intent"),
+                    "fire_type": event.get("fire_type"),
+                    "labels": event.get("labels", []),
+                    "reasons": event.get("reasons", []),
+                    "damage_events": event.get("damage_events", []),
+                    "forced_movements": event.get("forced_movements", []),
+                    "conversions": event.get("conversions", []),
+                }
+                for event in (player.positive_fire_events + player.negative_fire_events)[:10]
+            ],
+            "he_events": [
+                {
+                    "round": event.get("round"),
+                    "tick": round(safe_float(event.get("tick")), 2),
+                    "impact": round(safe_float(event.get("impact")), 2),
+                    "labels": event.get("labels", []),
+                    "damage_events": event.get("damage_events", []),
+                    "kill_events": event.get("kill_events", []),
+                    "smoke_context": event.get("smoke_context"),
+                    "objective_context": event.get("objective_context"),
+                    "reasons": event.get("reasons", []),
+                }
+                for event in (player.positive_he_events + player.negative_he_events)[:10]
+            ],
             "positive_events": player.positive_kill_events[:5],
             "negative_events": player.negative_death_events[:5],
-            # Diagnostic fields
-            "diagnostics": {
-                "avg_round_impact": round(player.avg_round_impact, 3),
-                "total_round_impact": round(player.total_round_impact, 2),
-                "model_impact_score_raw": round(player.model_impact_score_raw, 2),
-                "model_impact_score_clipped": round(player.model_impact_score_clipped, 2),
-                "rule_quality_score_raw": round(player.rule_quality_score_raw, 2),
-                "rule_quality_score_clipped": round(player.rule_quality_score_clipped, 2),
-                "kill_impact_total": round(player.kill_impact_total, 2),
-                "death_impact_total": round(player.death_impact_total, 2),
-            },
         }
         result["players"].append(player_data)
-
-    # Add report-level diagnostics
-    result["diagnostics"] = {
-        "model_impact_clip_count_min": model_impact_clip_count_min,
-        "model_impact_clip_count_max": model_impact_clip_count_max,
-        "rating_zero_count": rating_zero_count,
-        "rating_hundred_count": rating_hundred_count,
-    }
-
-    # Add warning if model impact is heavily clipped
-    total_players = len(report.player_impacts)
-    if total_players > 0:
-        clip_ratio = (model_impact_clip_count_min + model_impact_clip_count_max) / total_players
-        if clip_ratio >= 0.3:
-            warning = "model_impact_score appears heavily clipped; rating calibration may need adjustment."
-            if warning not in result["warnings"]:
-                result["warnings"].append(warning)
 
     return result

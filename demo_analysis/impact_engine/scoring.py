@@ -31,6 +31,10 @@ from .rules import (
     EventLabels,
     label_event,
 )
+from .utility_flash import calculate_player_flash_impact
+from .utility_fire import calculate_player_fire_impact
+from .utility_he import calculate_player_he_impact
+from .utility_smoke import calculate_player_smoke_impact
 
 
 def calculate_win_rate_delta(
@@ -330,7 +334,20 @@ def calculate_player_round_impact(
         if "clutch_kill" in ki.labels:
             clutch_impact_total += get_weight("objective_impact.clutch_win_bonus", 1.5)
 
-    round_total = kill_impact_total + death_impact_total + trade_impact_total + objective_impact_total + clutch_impact_total
+    flash_impact_total, flash_events = calculate_player_flash_impact(player_name, round_context)
+    smoke_impact_total, smoke_events = calculate_player_smoke_impact(player_name, round_context)
+    fire_impact_total, fire_events = calculate_player_fire_impact(player_name, round_context)
+    he_impact_total, he_events = calculate_player_he_impact(player_name, round_context)
+    utility_impact_total = flash_impact_total + smoke_impact_total + fire_impact_total + he_impact_total
+
+    round_total = (
+        kill_impact_total
+        + death_impact_total
+        + trade_impact_total
+        + objective_impact_total
+        + clutch_impact_total
+        + utility_impact_total
+    )
 
     round_label = determine_round_label(round_total)
 
@@ -349,6 +366,15 @@ def calculate_player_round_impact(
         trade_impact=trade_impact_total,
         objective_impact=objective_impact_total,
         clutch_impact=clutch_impact_total,
+        utility_impact=utility_impact_total,
+        flash_impact=flash_impact_total,
+        flash_events=flash_events,
+        smoke_impact=smoke_impact_total,
+        smoke_events=smoke_events,
+        fire_impact=fire_impact_total,
+        fire_events=fire_events,
+        he_impact=he_impact_total,
+        he_events=he_events,
         round_total_impact=round_total,
         round_label=round_label,
     )
@@ -404,19 +430,57 @@ def calculate_player_match_impact(
     unexpected_deaths = sum(1 for l in player_labels if l == "unexpected_death")
     post_plant_throw_deaths = sum(1 for l in player_labels if l == "post_plant_throw_death")
     bomb_carrier_died_alone = sum(1 for l in player_labels if l == "bomb_carrier_died_alone")
-
-    model_impact_score_raw, model_impact_score_clipped = calculate_model_impact_score_raw(
-        round_impacts, player_labels
+    flash_labels = [label for ri in round_impacts for flash in ri.flash_events for label in flash.labels]
+    flash_score = sum(ri.flash_impact for ri in round_impacts)
+    effective_flashes = sum(
+        1 for ri in round_impacts for flash in ri.flash_events
+        if any(label in flash.labels for label in ("effective_team_flash", "converted_flash", "strong_blind", "full_blind", "forced_turn_kill"))
     )
-    rule_quality_score_raw, rule_quality_score_clipped = calculate_rule_quality_score_raw(
+    converted_flashes = sum(1 for l in flash_labels if l == "converted_flash")
+    forced_turn_kills = sum(1 for l in flash_labels if l == "forced_turn_kill")
+    severe_team_flashes = sum(1 for l in flash_labels if l == "severe_team_flash")
+    harmless_team_flashes = sum(1 for l in flash_labels if l == "harmless_team_flash")
+    team_flash_with_conversions = sum(1 for l in flash_labels if l == "team_flash_with_conversion")
+    smoke_labels = [label for ri in round_impacts for smoke in ri.smoke_events for label in smoke.labels]
+    smoke_score = sum(ri.smoke_impact for ri in round_impacts)
+    successful_fake_smokes = sum(1 for l in smoke_labels if l == "successful_fake_smoke")
+    fatal_leaky_smokes = sum(1 for l in smoke_labels if l == "fatal_leaky_smoke")
+    blocking_teammate_smokes = sum(1 for l in smoke_labels if l == "blocking_teammate_smoke")
+    converted_execute_smokes = sum(1 for l in smoke_labels if l == "converted_execute_smoke")
+    fire_labels = [label for ri in round_impacts for fire in ri.fire_events for label in fire.labels]
+    fire_score = sum(ri.fire_impact for ri in round_impacts)
+    anti_rush_fires = sum(1 for l in fire_labels if l == "anti_rush_fire")
+    post_plant_fires = sum(1 for l in fire_labels if l == "post_plant_fire")
+    anti_defuse_fires = sum(1 for l in fire_labels if l == "anti_defuse_fire")
+    forced_position_fires = sum(1 for l in fire_labels if l == "forced_position_fire")
+    kill_fires = sum(1 for l in fire_labels if l == "kill_fire")
+    harmful_fires = sum(1 for l in fire_labels if l == "harmful_fire")
+    forced_smoke_extinguishes = sum(1 for l in fire_labels if l == "forced_smoke_extinguish")
+    he_labels = [label for ri in round_impacts for he in ri.he_events for label in he.labels]
+    he_score = sum(ri.he_impact for ri in round_impacts)
+    he_damage_total = sum(
+        int(damage.get("damage", 0))
+        for ri in round_impacts
+        for he in ri.he_events
+        for damage in he.damage_events
+        if not damage.get("team_damage", False)
+    )
+    he_kills = sum(1 for l in he_labels if l == "kill_he")
+    anti_smoke_he_kills = sum(1 for l in he_labels if l in ("anti_smoke_he_direct_kill", "anti_smoke_route_he_kill"))
+    anti_smoke_route_hes = sum(1 for l in he_labels if l == "anti_smoke_route_he")
+    anti_defuse_hes = sum(1 for l in he_labels if l == "anti_defuse_he")
+    anti_plant_hes = sum(1 for l in he_labels if l == "anti_plant_he")
+    anti_rush_hes = sum(1 for l in he_labels if l == "anti_rush_he")
+    nade_stack_hits = sum(1 for l in he_labels if l == "nade_stack_damage")
+    low_value_hes = sum(1 for l in he_labels if l == "low_value_he")
+    harmful_hes = sum(1 for l in he_labels if l == "harmful_he")
+
+    model_impact_score = calculate_model_impact_score(round_impacts, player_labels)
+    rule_quality_score = calculate_rule_quality_score(
         round_impacts, player_labels,
         effective_trades, trades_taken, bad_deaths,
         self_created_risk_deaths, forced_risk_deaths
     )
-
-    # Keep backward-compatible clipped values as the main scores
-    model_impact_score = model_impact_score_clipped
-    rule_quality_score = rule_quality_score_clipped
 
     model_weight = get_weight("model_vs_rule_weight.model_impact", 0.65)
     rule_weight = get_weight("model_vs_rule_weight.rule_quality", 0.35)
@@ -441,8 +505,6 @@ def calculate_player_match_impact(
 
     kills_total = sum(len(ri.kills) for ri in round_impacts)
     deaths_total = sum(len(ri.deaths) for ri in round_impacts)
-    kill_impact_total = sum(ri.kill_impact for ri in round_impacts)
-    death_impact_total = sum(ri.death_impact for ri in round_impacts)
 
     positive_events = []
     negative_events = []
@@ -470,8 +532,97 @@ def calculate_player_match_impact(
                     "opponent": di.event.other_player,
                 })
 
+    positive_flash_events = []
+    negative_flash_events = []
+    positive_smoke_events = []
+    negative_smoke_events = []
+    positive_fire_events = []
+    negative_fire_events = []
+    positive_he_events = []
+    negative_he_events = []
+    for ri in round_impacts:
+        for flash in ri.flash_events:
+            event_data = {
+                "round": ri.round_id,
+                "type": "flash",
+                "tick": flash.tick,
+                "impact": flash.score,
+                "labels": flash.labels,
+                "affected_enemies": flash.affected_enemies,
+                "affected_teammates": flash.affected_teammates,
+                "converted_kills": flash.converted_kills,
+                "reasons": flash.reasons,
+            }
+            if flash.score > 0:
+                positive_flash_events.append(event_data)
+            elif flash.score < 0 or any(l in flash.labels for l in ("severe_team_flash", "harmful_team_flash", "no_flash_effect")):
+                negative_flash_events.append(event_data)
+        for smoke in ri.smoke_events:
+            event_data = {
+                "round": ri.round_id,
+                "type": "smoke",
+                "tick": smoke.tick,
+                "impact": smoke.score,
+                "intent": smoke.intent,
+                "labels": smoke.labels,
+                "reasons": smoke.reasons,
+                "target_matched": smoke.target_matched,
+                "block_score": smoke.block_score,
+                "leak_risk": smoke.leak_risk,
+                "conversion_score": smoke.conversion_score,
+                "teammate_dependency": smoke.teammate_dependency,
+                "enemy_exploitation": smoke.enemy_exploitation,
+            }
+            if smoke.score > 0:
+                positive_smoke_events.append(event_data)
+            elif smoke.score < 0 or any(l in smoke.labels for l in ("fatal_leaky_smoke", "blocking_teammate_smoke", "missed_smoke", "leaky_smoke")):
+                negative_smoke_events.append(event_data)
+        for fire in ri.fire_events:
+            event_data = {
+                "round": ri.round_id,
+                "type": "fire",
+                "tick": fire.tick,
+                "impact": fire.score,
+                "fire_type": fire.fire_type,
+                "intent": fire.intent,
+                "labels": fire.labels,
+                "damage_events": fire.damage_events,
+                "forced_movements": fire.forced_movements,
+                "conversions": fire.conversions,
+                "reasons": fire.reasons,
+            }
+            if fire.score > 0:
+                positive_fire_events.append(event_data)
+            elif fire.score < 0 or any(l in fire.labels for l in ("harmful_fire", "teammate_blocking_fire", "team_damage_fire", "wasted_fire")):
+                negative_fire_events.append(event_data)
+        for he in ri.he_events:
+            event_data = {
+                "round": ri.round_id,
+                "type": "he",
+                "tick": he.tick,
+                "impact": he.score,
+                "labels": he.labels,
+                "damage_events": he.damage_events,
+                "kill_events": he.kill_events,
+                "smoke_context": he.smoke_context,
+                "objective_context": he.objective_context,
+                "reasons": he.reasons,
+            }
+            if he.score > 0:
+                positive_he_events.append(event_data)
+            elif he.score < 0 or any(l in he.labels for l in ("harmful_he", "team_damage_he", "low_value_he", "wasted_he")):
+                negative_he_events.append(event_data)
+
     positive_events.sort(key=lambda x: x["impact"], reverse=True)
     negative_events.sort(key=lambda x: x["impact"])
+    positive_flash_events.sort(key=lambda x: x["impact"], reverse=True)
+    negative_flash_events.sort(key=lambda x: x["impact"])
+    positive_smoke_events.sort(key=lambda x: x["impact"], reverse=True)
+    negative_smoke_events.sort(key=lambda x: x["impact"])
+    positive_fire_events.sort(key=lambda x: x["impact"], reverse=True)
+    negative_fire_events.sort(key=lambda x: x["impact"])
+    positive_he_events.sort(key=lambda x: x["impact"], reverse=True)
+    negative_he_events.sort(key=lambda x: x["impact"])
 
     return PlayerMatchImpact(
         player_name=player_name,
@@ -500,29 +651,60 @@ def calculate_player_match_impact(
         unexpected_deaths=unexpected_deaths,
         post_plant_throw_deaths=post_plant_throw_deaths,
         bomb_carrier_died_alone=bomb_carrier_died_alone,
+        effective_flashes=effective_flashes,
+        converted_flashes=converted_flashes,
+        forced_turn_kills=forced_turn_kills,
+        severe_team_flashes=severe_team_flashes,
+        harmless_team_flashes=harmless_team_flashes,
+        team_flash_with_conversions=team_flash_with_conversions,
+        flash_score=flash_score,
+        smoke_score=smoke_score,
+        successful_fake_smokes=successful_fake_smokes,
+        fatal_leaky_smokes=fatal_leaky_smokes,
+        blocking_teammate_smokes=blocking_teammate_smokes,
+        converted_execute_smokes=converted_execute_smokes,
+        fire_score=fire_score,
+        anti_rush_fires=anti_rush_fires,
+        post_plant_fires=post_plant_fires,
+        anti_defuse_fires=anti_defuse_fires,
+        forced_position_fires=forced_position_fires,
+        kill_fires=kill_fires,
+        harmful_fires=harmful_fires,
+        forced_smoke_extinguishes=forced_smoke_extinguishes,
+        he_score=he_score,
+        he_damage_total=he_damage_total,
+        he_kills=he_kills,
+        anti_smoke_he_kills=anti_smoke_he_kills,
+        anti_smoke_route_hes=anti_smoke_route_hes,
+        anti_defuse_hes=anti_defuse_hes,
+        anti_plant_hes=anti_plant_hes,
+        anti_rush_hes=anti_rush_hes,
+        nade_stack_hits=nade_stack_hits,
+        low_value_hes=low_value_hes,
+        harmful_hes=harmful_hes,
         positive_kill_events=positive_events[:5],
         negative_death_events=negative_events[:5],
+        positive_flash_events=positive_flash_events[:5],
+        negative_flash_events=negative_flash_events[:5],
+        positive_smoke_events=positive_smoke_events[:5],
+        negative_smoke_events=negative_smoke_events[:5],
+        positive_fire_events=positive_fire_events[:5],
+        negative_fire_events=negative_fire_events[:5],
+        positive_he_events=positive_he_events[:5],
+        negative_he_events=negative_he_events[:5],
         kda=(kills_total, deaths_total, sum(1 for ri in round_impacts for _ in ri.deaths)),
         rating=rating,
         rating_0_100=rating_0_100,
-        avg_round_impact=avg_round_impact,
-        total_round_impact=total_round_impact,
-        model_impact_score_raw=model_impact_score_raw,
-        model_impact_score_clipped=model_impact_score_clipped,
-        rule_quality_score_raw=rule_quality_score_raw,
-        rule_quality_score_clipped=rule_quality_score_clipped,
-        kill_impact_total=kill_impact_total,
-        death_impact_total=death_impact_total,
     )
 
 
-def calculate_model_impact_score_raw(
+def calculate_model_impact_score(
     round_impacts: list[PlayerRoundImpact],
     player_labels: list[str]
-) -> tuple[float, float]:
-    """Calculate the model-based impact score, returning (raw, clipped)."""
+) -> float:
+    """Calculate the model-based impact score."""
     if not round_impacts:
-        return 0.0, 0.0
+        return 0.0
 
     total_rwi = sum(ri.round_total_impact for ri in round_impacts)
 
@@ -536,42 +718,9 @@ def calculate_model_impact_score_raw(
     easy_duel_penalty = easy_duel_losses * 0.6
     unexpected_penalty = unexpected_deaths * 0.4
 
-    raw_score = base_score + hard_duel_bonus - easy_duel_penalty - unexpected_penalty
-    clipped_score = max(-50, min(50, raw_score))
+    model_score = base_score + hard_duel_bonus - easy_duel_penalty - unexpected_penalty
 
-    return raw_score, clipped_score
-
-
-def calculate_rule_quality_score_raw(
-    round_impacts: list[PlayerRoundImpact],
-    player_labels: list[str],
-    effective_trades: int,
-    trades_taken: int,
-    bad_deaths: int,
-    self_created_risk_deaths: int,
-    forced_risk_deaths: int
-) -> tuple[float, float]:
-    """Calculate the rule-based quality score, returning (raw, clipped)."""
-    trade_bonus = effective_trades * 0.5
-    trade_penalty = trades_taken * 0.3
-    bad_death_penalty = bad_deaths * 0.8
-    self_created_penalty = self_created_risk_deaths * 0.6
-    forced_risk_bonus = forced_risk_deaths * 0.3
-
-    raw_score = trade_bonus + forced_risk_bonus - trade_penalty - bad_death_penalty - self_created_penalty
-    clipped_score = max(-50, min(50, raw_score))
-
-    return raw_score, clipped_score
-
-
-# Backward-compatible wrappers
-def calculate_model_impact_score(
-    round_impacts: list[PlayerRoundImpact],
-    player_labels: list[str]
-) -> float:
-    """Calculate the model-based impact score (clipped, backward-compatible)."""
-    _raw, clipped = calculate_model_impact_score_raw(round_impacts, player_labels)
-    return clipped
+    return max(-50, min(50, model_score))
 
 
 def calculate_rule_quality_score(
@@ -583,10 +732,13 @@ def calculate_rule_quality_score(
     self_created_risk_deaths: int,
     forced_risk_deaths: int
 ) -> float:
-    """Calculate the rule-based quality score (clipped, backward-compatible)."""
-    _raw, clipped = calculate_rule_quality_score_raw(
-        round_impacts, player_labels,
-        effective_trades, trades_taken, bad_deaths,
-        self_created_risk_deaths, forced_risk_deaths
-    )
-    return clipped
+    """Calculate the rule-based quality score."""
+    trade_bonus = effective_trades * 0.5
+    trade_penalty = trades_taken * 0.3
+    bad_death_penalty = bad_deaths * 0.8
+    self_created_penalty = self_created_risk_deaths * 0.6
+    forced_risk_bonus = forced_risk_deaths * 0.3
+
+    rule_score = trade_bonus + forced_risk_bonus - trade_penalty - bad_death_penalty - self_created_penalty
+
+    return max(-50, min(50, rule_score))
