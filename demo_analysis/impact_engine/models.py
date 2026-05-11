@@ -33,6 +33,8 @@ class PredictionTick:
     players_info: list[dict[str, Any]]
     is_bomb_planted: bool = False
     bomb_planted_time: float | None = None
+    future_kills: list[dict[str, Any]] = field(default_factory=list)
+    future_damage: list[dict[str, Any]] = field(default_factory=list)
 
     def get_player_side_win_rate(
         self, 
@@ -206,6 +208,16 @@ class PlayerMatchImpact:
     rating_0_100: float = 0.0
 
     confidence: str = "high"
+
+    # Diagnostic fields for score calibration visibility
+    avg_round_impact: float = 0.0
+    total_round_impact: float = 0.0
+    model_impact_score_raw: float = 0.0
+    model_impact_score_clipped: float = 0.0
+    rule_quality_score_raw: float = 0.0
+    rule_quality_score_clipped: float = 0.0
+    kill_impact_total: float = 0.0
+    death_impact_total: float = 0.0
 
 
 @dataclass

@@ -46,6 +46,11 @@ def main():
         action="store_true",
         help="详细输出模式"
     )
+    parser.add_argument(
+        "--utility-debug",
+        action="store_true",
+        help="输出 utility diagnostics 信息"
+    )
 
     args = parser.parse_args()
 
@@ -132,6 +137,26 @@ def main():
     if args.verbose and report.warnings:
         for warning in report.warnings:
             print(f"[警告] {warning}", file=sys.stderr)
+
+    if args.utility_debug:
+        print("\n" + "=" * 50)
+        print("Utility Diagnostics")
+        print("=" * 50)
+        json_output = report_to_json(report)
+        diagnostics = json_output.get("diagnostics", {})
+        print(f"Model impact clip (min): {diagnostics.get('model_impact_clip_count_min', 0)}")
+        print(f"Model impact clip (max): {diagnostics.get('model_impact_clip_count_max', 0)}")
+        print(f"Rating = 0 count: {diagnostics.get('rating_zero_count', 0)}")
+        print(f"Rating = 100 count: {diagnostics.get('rating_hundred_count', 0)}")
+        print()
+        for player in json_output.get("players", []):
+            name = player.get("player_name", "Unknown")
+            diag = player.get("diagnostics", {})
+            print(f"  {name}:")
+            print(f"    avg_round_impact: {diag.get('avg_round_impact', 0)}")
+            print(f"    model_raw/clipped: {diag.get('model_impact_score_raw', 0)} / {diag.get('model_impact_score_clipped', 0)}")
+            print(f"    rule_raw/clipped: {diag.get('rule_quality_score_raw', 0)} / {diag.get('rule_quality_score_clipped', 0)}")
+            print(f"    kill/death_impact: {diag.get('kill_impact_total', 0)} / {diag.get('death_impact_total', 0)}")
 
 
 if __name__ == "__main__":
