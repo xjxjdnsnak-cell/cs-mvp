@@ -107,14 +107,56 @@ class TestCLI(unittest.TestCase):
         self.project_root = Path(__file__).resolve().parents[3]
         sys.path.insert(0, str(self.project_root))
     
-    def test_cli_basic(self):
-        """Test running CLI with synthetic data (without full run due to dependencies)."""
-        try:
-            # We'll just test that the module is importable
-            from demo_analysis.impact_engine import cli
-            self.assertIsNotNone(cli)
-        except Exception as e:
-            self.fail(f"CLI module could not be imported: {e}")
+    def test_cli_subprocess_execution(self):
+        """Test running CLI with subprocess.run to execute the actual command."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            md_path = Path(tmpdir) / "impact_report.md"
+            json_path = Path(tmpdir) / "impact_report.json"
+            
+            # Use subprocess.run to execute the CLI command
+            result = subprocess.run(
+                [
+                    sys.executable, "-m", "demo_analysis.impact_engine.cli",
+                    "--analysis-json", str(self.synthetic_json_path),
+                    "--out", str(md_path),
+                    "--json-out", str(json_path)
+                ],
+                cwd=str(self.project_root),
+                capture_output=True,
+                text=True
+            )
+            
+            # Assert command succeeded
+            self.assertEqual(result.returncode, 0, f"CLI failed: {result.stderr}")
+            
+            # Assert markdown file exists and non-empty
+            self.assertTrue(md_path.exists(), "Markdown output file not created")
+            self.assertGreater(md_path.stat().st_size, 0, "Markdown output file is empty")
+            
+            # Assert json file exists and non-empty
+            self.assertTrue(json_path.exists(), "JSON output file not created")
+            self.assertGreater(json_path.stat().st_size, 0, "JSON output file is empty")
+            
+            # Load and verify JSON structure
+            with open(json_path, "r", encoding="utf-8") as f:
+                json_data = json.load(f)
+            
+            self.assertIn("players", json_data, "JSON missing 'players' field")
+            self.assertIsInstance(json_data["players"], list)
+            self.assertGreater(len(json_data["players"]), 0, "No players in output")
+            
+            # Check that at least one player has rating_0_100
+            player_with_rating = [p for p in json_data["players"] if "rating_0_100" in p]
+            self.assertGreater(len(player_with_rating), 0, "No player with rating_0_100 found")
+            
+            # Check for expected fields in player data
+            player = player_with_rating[0]
+            self.assertIn("player_name", player)
+            self.assertIn("team", player)
+            
+            # Check for presence of expected stats fields (even if 0)
+            self.assertIn("death_stats", player, "Player missing death_stats")
+            self.assertIn("kill_stats", player, "Player missing kill_stats")
     
     def test_temporary_file_output(self):
         """Test that the file output system works."""
