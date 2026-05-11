@@ -28,30 +28,43 @@ def collect_round_diagnostics(round_context: RoundContext) -> dict[str, Any]:
         "fire_attribution_method_counts": {},
         "he_candidate_events_from_damage": 0,
         "he_candidate_events_from_projectiles": 0,
+        "he_candidate_events_from_kills": 0,
+        "he_projectile_type_values": set(),
+        "he_entity_grenade_type_values": set(),
+        "he_damage_weapon_values": set(),
+        "fire_projectile_type_values": set(),
+        "fire_entity_grenade_type_values": set(),
+        "fire_damage_weapon_values": set(),
+        "smoke_target_match_counts": {},
+        "possible_overmatched_smoke_targets": [],
     }
 
-    # Count event types
+    # Count event types from RoundContext.events
     for event in round_context.events:
         et = event.event_type.value
         diagnostics["event_type_counts"][et] = diagnostics["event_type_counts"].get(et, 0) + 1
 
     # Collect from ticks
     for tick in round_context.ticks:
-        # Projectiles
-        projectiles = tick.players_info[0].get("projectiles") if tick.players_info else None
-        if projectiles:
-            for p in projectiles:
-                ptype = p.get("type")
-                if ptype:
-                    diagnostics["projectile_type_values"].add(str(ptype))
+        # Projectiles (from tick.projectiles directly)
+        for p in tick.projectiles:
+            ptype = p.get("type")
+            if ptype:
+                diagnostics["projectile_type_values"].add(str(ptype))
+                if is_he_weapon(ptype):
+                    diagnostics["he_projectile_type_values"].add(str(ptype))
+                if is_fire_weapon(ptype):
+                    diagnostics["fire_projectile_type_values"].add(str(ptype))
 
-        # Entity grenades
-        entity_grenades = tick.players_info[0].get("entity_grenades") if tick.players_info else None
-        if entity_grenades:
-            for eg in entity_grenades:
-                egtype = eg.get("type") or eg.get("grenade_type")
-                if egtype:
-                    diagnostics["entity_grenade_type_values"].add(str(egtype))
+        # Entity grenades (from tick.entity_grenades directly)
+        for eg in tick.entity_grenades:
+            egtype = eg.get("type") or eg.get("grenade_type")
+            if egtype:
+                diagnostics["entity_grenade_type_values"].add(str(egtype))
+                if is_he_weapon(egtype):
+                    diagnostics["he_entity_grenade_type_values"].add(str(egtype))
+                if is_fire_weapon(egtype):
+                    diagnostics["fire_entity_grenade_type_values"].add(str(egtype))
 
         # Future damage
         future_damage = tick.future_damage
@@ -69,7 +82,7 @@ def collect_round_diagnostics(round_context: RoundContext) -> dict[str, Any]:
         future_kills = tick.future_kills
         diagnostics["future_kill_count"] += len(future_kills)
 
-    # Count DAMAGE events from RoundContext.events
+    # Count DAMAGE events from RoundContext.events and deduplicate with tick future_damage
     damage_events = [e for e in round_context.events if e.event_type == EventType.DAMAGE]
     diagnostics["damage_events_found"] = len(damage_events)
 
@@ -83,12 +96,30 @@ def collect_round_diagnostics(round_context: RoundContext) -> dict[str, Any]:
                 diagnostics["fire_attribution_method_counts"].get(method, 0) + 1
             )
 
+    # Check for HE candidates from future_kills in ticks
+    for tick in round_context.ticks:
+        for fk in tick.future_kills:
+            if is_he_weapon(fk.get("weapon")):
+                diagnostics["he_candidate_events_from_kills"] += 1
+
+    # HE candidates from projectiles
+    for tick in round_context.ticks:
+        for p in tick.projectiles:
+            if is_he_weapon(p.get("type")):
+                diagnostics["he_candidate_events_from_projectiles"] += 1
+
     # Convert sets to sorted lists for JSON serialization
     diagnostics["projectile_type_values"] = sorted(diagnostics["projectile_type_values"])
     diagnostics["entity_grenade_type_values"] = sorted(diagnostics["entity_grenade_type_values"])
     diagnostics["damage_weapon_values"] = sorted(diagnostics["damage_weapon_values"])
     diagnostics["fire_damage_weapon_values"] = sorted(diagnostics["fire_damage_weapon_values"])
     diagnostics["he_damage_weapon_values"] = sorted(diagnostics["he_damage_weapon_values"])
+    diagnostics["he_projectile_type_values"] = sorted(diagnostics["he_projectile_type_values"])
+    diagnostics["he_entity_grenade_type_values"] = sorted(diagnostics["he_entity_grenade_type_values"])
+    diagnostics["he_damage_weapon_values"] = sorted(diagnostics["he_damage_weapon_values"])
+    diagnostics["fire_projectile_type_values"] = sorted(diagnostics["fire_projectile_type_values"])
+    diagnostics["fire_entity_grenade_type_values"] = sorted(diagnostics["fire_entity_grenade_type_values"])
+    diagnostics["fire_damage_weapon_values"] = sorted(diagnostics["fire_damage_weapon_values"])
 
     return diagnostics
 
@@ -109,6 +140,16 @@ def collect_match_diagnostics(round_contexts: list[RoundContext]) -> dict[str, A
         "all_he_damage_weapon_values": set(),
         "fire_attribution_method_counts": {},
         "he_candidate_events_from_damage": 0,
+        "he_candidate_events_from_projectiles": 0,
+        "he_candidate_events_from_kills": 0,
+        "he_projectile_type_values": set(),
+        "he_entity_grenade_type_values": set(),
+        "he_damage_weapon_values": set(),
+        "fire_projectile_type_values": set(),
+        "fire_entity_grenade_type_values": set(),
+        "fire_damage_weapon_values": set(),
+        "smoke_target_match_counts": {},
+        "possible_overmatched_smoke_targets": set(),
     }
 
     for rc in round_contexts:
@@ -125,11 +166,25 @@ def collect_match_diagnostics(round_contexts: list[RoundContext]) -> dict[str, A
         aggregated["all_fire_damage_weapon_values"].update(rd["fire_damage_weapon_values"])
         aggregated["all_he_damage_weapon_values"].update(rd["he_damage_weapon_values"])
         aggregated["he_candidate_events_from_damage"] += rd["he_candidate_events_from_damage"]
+        aggregated["he_candidate_events_from_projectiles"] += rd["he_candidate_events_from_projectiles"]
+        aggregated["he_candidate_events_from_kills"] += rd["he_candidate_events_from_kills"]
+        aggregated["he_projectile_type_values"].update(rd["he_projectile_type_values"])
+        aggregated["he_entity_grenade_type_values"].update(rd["he_entity_grenade_type_values"])
+        aggregated["he_damage_weapon_values"].update(rd["he_damage_weapon_values"])
+        aggregated["fire_projectile_type_values"].update(rd["fire_projectile_type_values"])
+        aggregated["fire_entity_grenade_type_values"].update(rd["fire_entity_grenade_type_values"])
+        aggregated["fire_damage_weapon_values"].update(rd["fire_damage_weapon_values"])
 
         for method, count in rd["fire_attribution_method_counts"].items():
             aggregated["fire_attribution_method_counts"][method] = (
                 aggregated["fire_attribution_method_counts"].get(method, 0) + count
             )
+
+        for target, count in rd["smoke_target_match_counts"].items():
+            aggregated["smoke_target_match_counts"][target] = (
+                aggregated["smoke_target_match_counts"].get(target, 0) + count
+            )
+        aggregated["possible_overmatched_smoke_targets"].update(rd["possible_overmatched_smoke_targets"])
 
     # Convert sets to sorted lists
     aggregated["all_projectile_type_values"] = sorted(aggregated["all_projectile_type_values"])
@@ -137,6 +192,13 @@ def collect_match_diagnostics(round_contexts: list[RoundContext]) -> dict[str, A
     aggregated["all_damage_weapon_values"] = sorted(aggregated["all_damage_weapon_values"])
     aggregated["all_fire_damage_weapon_values"] = sorted(aggregated["all_fire_damage_weapon_values"])
     aggregated["all_he_damage_weapon_values"] = sorted(aggregated["all_he_damage_weapon_values"])
+    aggregated["he_projectile_type_values"] = sorted(aggregated["he_projectile_type_values"])
+    aggregated["he_entity_grenade_type_values"] = sorted(aggregated["he_entity_grenade_type_values"])
+    aggregated["he_damage_weapon_values"] = sorted(aggregated["he_damage_weapon_values"])
+    aggregated["fire_projectile_type_values"] = sorted(aggregated["fire_projectile_type_values"])
+    aggregated["fire_entity_grenade_type_values"] = sorted(aggregated["fire_entity_grenade_type_values"])
+    aggregated["fire_damage_weapon_values"] = sorted(aggregated["fire_damage_weapon_values"])
+    aggregated["possible_overmatched_smoke_targets"] = sorted(aggregated["possible_overmatched_smoke_targets"])
 
     return {
         "aggregated": aggregated,
@@ -202,5 +264,50 @@ def format_utility_diagnostics(diagnostics: dict[str, Any]) -> str:
     lines.append("")
 
     lines.append(f"HE candidate events from damage: {agg.get('he_candidate_events_from_damage', 0)}")
+    lines.append(f"HE candidate events from projectiles: {agg.get('he_candidate_events_from_projectiles', 0)}")
+    lines.append(f"HE candidate events from kills: {agg.get('he_candidate_events_from_kills', 0)}")
+    lines.append("")
+
+    lines.append("HE projectile type values:")
+    for v in agg.get("he_projectile_type_values", []):
+        lines.append(f"  - {v}")
+    if not agg.get("he_projectile_type_values"):
+        lines.append("  (none found)")
+    lines.append("")
+
+    lines.append("HE entity grenade type values:")
+    for v in agg.get("he_entity_grenade_type_values", []):
+        lines.append(f"  - {v}")
+    if not agg.get("he_entity_grenade_type_values"):
+        lines.append("  (none found)")
+    lines.append("")
+
+    lines.append("Fire projectile type values:")
+    for v in agg.get("fire_projectile_type_values", []):
+        lines.append(f"  - {v}")
+    if not agg.get("fire_projectile_type_values"):
+        lines.append("  (none found)")
+    lines.append("")
+
+    lines.append("Fire entity grenade type values:")
+    for v in agg.get("fire_entity_grenade_type_values", []):
+        lines.append(f"  - {v}")
+    if not agg.get("fire_entity_grenade_type_values"):
+        lines.append("  (none found)")
+    lines.append("")
+
+    lines.append("Smoke target match counts:")
+    for target, count in agg.get("smoke_target_match_counts", {}).items():
+        lines.append(f"  - {target}: {count}")
+    if not agg.get("smoke_target_match_counts"):
+        lines.append("  (none found)")
+    lines.append("")
+
+    lines.append("Possible overmatched smoke targets:")
+    for target in agg.get("possible_overmatched_smoke_targets", []):
+        lines.append(f"  - {target}")
+    if not agg.get("possible_overmatched_smoke_targets"):
+        lines.append("  (none found)")
+    lines.append("")
 
     return "\n".join(lines)

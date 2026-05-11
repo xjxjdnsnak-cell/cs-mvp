@@ -699,6 +699,28 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
         "players": [],
     }
 
+    # Compute report-level diagnostics
+    model_impact_clip_count_min = sum(
+        1 for p in report.player_impacts if p.model_impact_score_raw < -50
+    )
+    model_impact_clip_count_max = sum(
+        1 for p in report.player_impacts if p.model_impact_score_raw > 50
+    )
+    rating_zero_count = sum(1 for p in report.player_impacts if p.rating_0_100 <= 0.0)
+    rating_hundred_count = sum(1 for p in report.player_impacts if p.rating_0_100 >= 100.0)
+
+    result["diagnostics"] = {
+        "model_impact_clip_count_min": model_impact_clip_count_min,
+        "model_impact_clip_count_max": model_impact_clip_count_max,
+        "rating_zero_count": rating_zero_count,
+        "rating_hundred_count": rating_hundred_count,
+    }
+
+    total_players = len(report.player_impacts)
+    if total_players > 0 and (model_impact_clip_count_min + model_impact_clip_count_max) / total_players > 0.3:
+        if "model_impact_score appears heavily clipped; rating calibration may need adjustment." not in report.warnings:
+            result["warnings"].append("model_impact_score appears heavily clipped; rating calibration may need adjustment.")
+
     for player in report.player_impacts:
         player_data = {
             "player_name": player.player_name,
@@ -838,6 +860,16 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
             ],
             "positive_events": player.positive_kill_events[:5],
             "negative_events": player.negative_death_events[:5],
+            "diagnostics": {
+                "avg_round_impact": round(player.avg_round_impact, 2),
+                "total_round_impact": round(player.total_round_impact, 2),
+                "model_impact_score_raw": round(player.model_impact_score_raw, 2),
+                "model_impact_score_clipped": round(player.model_impact_score_clipped, 2),
+                "rule_quality_score_raw": round(player.rule_quality_score_raw, 2),
+                "rule_quality_score_clipped": round(player.rule_quality_score_clipped, 2),
+                "kill_impact_total": round(player.kill_impact_total, 2),
+                "death_impact_total": round(player.death_impact_total, 2),
+            },
         }
         result["players"].append(player_data)
 

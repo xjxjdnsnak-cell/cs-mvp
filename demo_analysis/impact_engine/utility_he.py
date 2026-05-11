@@ -180,6 +180,38 @@ def collect_he_events(round_context: RoundContext) -> list[HEEvent]:
                 low_confidence=True,
             )
 
+    # Source 3: EventType.KILL or tick future_kills with HE weapon -> low-confidence HEEvent
+    for event in round_context.events:
+        if event.event_type == EventType.KILL and is_he_weapon(event.weapon):
+            entityid = f"he-kill-{event.player}-{event.tick}"
+            if any(abs(e.tick - event.tick) <= 0.5 and e.thrower == event.player for e in events.values()):
+                continue
+            events[entityid] = HEEvent(
+                entityid=entityid,
+                tick=event.tick,
+                position=player_position_at(round_context, event.other_player, event.tick),
+                thrower=event.player or "unknown",
+                low_confidence=True,
+            )
+
+    for tick in round_context.ticks:
+        for fk in tick.future_kills:
+            if not is_he_weapon(fk.get("weapon", "")):
+                continue
+            fk_time = safe_float(fk.get("time"), tick.round_seconds)
+            killer = fk.get("killer") or fk.get("attacker") or fk.get("attacker_name") or "unknown"
+            victim = fk.get("victim") or fk.get("victim_name") or fk.get("user_name") or fk.get("target")
+            entityid = f"he-kill-{killer}-{fk_time}"
+            if entityid in events:
+                continue
+            events[entityid] = HEEvent(
+                entityid=entityid,
+                tick=fk_time,
+                position=player_position_at(round_context, victim, fk_time),
+                thrower=killer,
+                low_confidence=True,
+            )
+
     for he_event in events.values():
         if he_event.thrower == "unknown":
             inferred = infer_inventory_thrower(he_event, round_context)

@@ -107,6 +107,22 @@ def is_he_weapon(value: str | None) -> bool:
     if w in he_names:
         return True
 
+    # Explicitly exclude wrong types
+    exclude = {
+        "flashbang",
+        "smokegrenade",
+        "smoke",
+        "molotov",
+        "incendiary",
+        "incgrenade",
+        "inferno",
+        "firebomb",
+        "fire",
+        "decoy",
+    }
+    if w in exclude:
+        return False
+
     return False
 
 
@@ -126,6 +142,19 @@ def is_fire_weapon(value: str | None) -> bool:
 
     if w in fire_names:
         return True
+
+    # Explicitly exclude wrong types
+    exclude = {
+        "smokegrenade",
+        "smoke",
+        "flashbang",
+        "hegrenade",
+        "he",
+        "highexplosivegrenade",
+        "decoy",
+    }
+    if w in exclude:
+        return False
 
     return False
 
