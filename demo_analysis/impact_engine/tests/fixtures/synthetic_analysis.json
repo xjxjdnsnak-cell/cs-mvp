@@ -1,0 +1,144 @@
+{
+  "1": {
+    "round_id": 1,
+    "winner": "T",
+    "team1_on_ct": true,
+    "CT_players": ["Player1_CT_1", "Player2_CT_2", "Player3_CT_3", "Player4_CT_4", "Player5_CT_5"],
+    "T_players": ["Player1_T_1", "Player2_T_2", "Player3_T_3", "Player4_T_4", "Player5_T_5"],
+    "map_name": "de_inferno",
+    "win_rate": [
+      {"round_seconds": 0.0, "ct_win_rate": 0.5},
+      {"round_seconds": 5.0, "ct_win_rate": 0.7},
+      {"round_seconds": 10.0, "ct_win_rate": 0.6}
+    ],
+    "player_data": [
+      {"Player1_CT_1": {"kill_contribution": 0.3, "tactical_contribution": 0.1}},
+      {"Player2_CT_2": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player3_CT_3": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player4_CT_4": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player5_CT_5": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player1_T_1": {"kill_contribution": -0.1, "tactical_contribution": 0.0}},
+      {"Player2_T_2": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player3_T_3": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player4_T_4": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player5_T_5": {"kill_contribution": 0.0, "tactical_contribution": 0.0}}
+    ],
+    "kills": [
+      {
+        "killer": "Player1_CT_1",
+        "victim": "Player1_T_1",
+        "round_seconds": 5.2,
+        "weapon": "AK-47",
+        "headshot": true,
+        "difficulty": 1.2,
+        "kill_impact": 0.3
+      }
+    ],
+    "ticks": [
+      {
+        "round_seconds": 0.0,
+        "ct_win_rate": 0.5,
+        "alive_pred": [0.95, 0.94, 0.93, 0.92, 0.91, 0.90, 0.89, 0.88, 0.87, 0.86],
+        "next_kill": [0.1, 0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01],
+        "next_death": [0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14],
+        "duel": [
+          ["/", 0.4, 0.45, 0.42, 0.38, 0.6, 0.55, 0.58, 0.62, 0.65],
+          [0.6, "/", 0.4, 0.43, 0.4, 0.6, 0.55, 0.58, 0.62, 0.65],
+          [0.55, 0.6, "/", 0.45, 0.42, 0.6, 0.55, 0.58, 0.62, 0.65],
+          [0.58, 0.57, 0.55, "/", 0.4, 0.6, 0.55, 0.58, 0.62, 0.65],
+          [0.62, 0.6, 0.58, 0.6, "/", 0.6, 0.55, 0.58, 0.62, 0.65],
+          [0.4, 0.45, 0.4, 0.42, 0.38, "/", 0.55, 0.58, 0.62, 0.65],
+          [0.45, 0.5, 0.45, 0.47, 0.43, 0.45, "/", 0.58, 0.62, 0.65],
+          [0.42, 0.45, 0.42, 0.45, 0.4, 0.42, 0.42, "/", 0.62, 0.65],
+          [0.38, 0.4, 0.38, 0.42, 0.38, 0.38, 0.38, 0.38, "/", 0.65],
+          [0.35, 0.38, 0.35, 0.38, 0.35, 0.35, 0.35, 0.35, 0.35, "/"]
+        ],
+        "players_info": [
+          {"name": "Player1_CT_1", "is_alive": true, "X": 100.0, "Y": 200.0, "Z": 0.0, "inventory": ["M4A4", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player2_CT_2", "is_alive": true, "X": 105.0, "Y": 205.0, "Z": 0.0, "inventory": ["M4A4", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player3_CT_3", "is_alive": true, "X": 110.0, "Y": 210.0, "Z": 0.0, "inventory": ["M4A4", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player4_CT_4", "is_alive": true, "X": 115.0, "Y": 215.0, "Z": 0.0, "inventory": ["AWP", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player5_CT_5", "is_alive": true, "X": 120.0, "Y": 220.0, "Z": 0.0, "inventory": ["M4A4", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player1_T_1", "is_alive": true, "X": 600.0, "Y": 700.0, "Z": 0.0, "inventory": ["AK-47", "Glock-18", "Flashbang", "Smoke Grenade", "Molotov"]},
+          {"name": "Player2_T_2", "is_alive": true, "X": 605.0, "Y": 705.0, "Z": 0.0, "inventory": ["AK-47", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player3_T_3", "is_alive": true, "X": 610.0, "Y": 710.0, "Z": 0.0, "inventory": ["AK-47", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player4_T_4", "is_alive": true, "X": 615.0, "Y": 715.0, "Z": 0.0, "inventory": ["AK-47", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player5_T_5", "is_alive": true, "X": 1000.0, "Y": 1100.0, "Z": 0.0, "inventory": ["AK-47", "Glock-18", "Flashbang", "Smoke Grenade", "C4"]}
+        ],
+        "is_bomb_planted": false,
+        "bomb_planted_time": null
+      }
+    ]
+  },
+  "2": {
+    "round_id": 2,
+    "winner": "CT",
+    "team1_on_ct": false,
+    "CT_players": ["Player6_CT_6", "Player7_CT_7", "Player8_CT_8", "Player9_CT_9", "Player10_CT_10"],
+    "T_players": ["Player1_CT_1", "Player2_CT_2", "Player3_CT_3", "Player4_CT_4", "Player5_CT_5"],
+    "map_name": "de_inferno",
+    "win_rate": [
+      {"round_seconds": 0.0, "ct_win_rate": 0.5},
+      {"round_seconds": 10.0, "ct_win_rate": 0.6},
+      {"round_seconds": 15.0, "ct_win_rate": 0.55}
+    ],
+    "player_data": [
+      {"Player6_CT_6": {"kill_contribution": 0.25, "tactical_contribution": 0.0}},
+      {"Player7_CT_7": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player8_CT_8": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player9_CT_9": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player10_CT_10": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player1_CT_1": {"kill_contribution": -0.1, "tactical_contribution": 0.0}},
+      {"Player2_CT_2": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player3_CT_3": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player4_CT_4": {"kill_contribution": 0.0, "tactical_contribution": 0.0}},
+      {"Player5_CT_5": {"kill_contribution": 0.0, "tactical_contribution": 0.0}}
+    ],
+    "kills": [
+      {
+        "killer": "Player6_CT_6",
+        "victim": "Player1_CT_1",
+        "round_seconds": 12.0,
+        "weapon": "AWP",
+        "headshot": true,
+        "difficulty": 0.8,
+        "kill_impact": 0.25
+      }
+    ],
+    "ticks": [
+      {
+        "round_seconds": 0.0,
+        "ct_win_rate": 0.5,
+        "alive_pred": [0.95, 0.94, 0.93, 0.92, 0.91, 0.90, 0.89, 0.88, 0.87, 0.86],
+        "next_kill": [0.1, 0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01],
+        "next_death": [0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14],
+        "duel": [
+          ["/", 0.4, 0.45, 0.42, 0.38, 0.6, 0.55, 0.58, 0.62, 0.65],
+          [0.6, "/", 0.4, 0.43, 0.4, 0.6, 0.55, 0.58, 0.62, 0.65],
+          [0.55, 0.6, "/", 0.45, 0.42, 0.6, 0.55, 0.58, 0.62, 0.65],
+          [0.58, 0.57, 0.55, "/", 0.4, 0.6, 0.55, 0.58, 0.62, 0.65],
+          [0.62, 0.6, 0.58, 0.6, "/", 0.6, 0.55, 0.58, 0.62, 0.65],
+          [0.4, 0.45, 0.4, 0.42, 0.38, "/", 0.55, 0.58, 0.62, 0.65],
+          [0.45, 0.5, 0.45, 0.47, 0.43, 0.45, "/", 0.58, 0.62, 0.65],
+          [0.42, 0.45, 0.42, 0.45, 0.4, 0.42, 0.42, "/", 0.62, 0.65],
+          [0.38, 0.4, 0.38, 0.42, 0.38, 0.38, 0.38, 0.38, "/", 0.65],
+          [0.35, 0.38, 0.35, 0.38, 0.35, 0.35, 0.35, 0.35, 0.35, "/"]
+        ],
+        "players_info": [
+          {"name": "Player6_CT_6", "is_alive": true, "X": 100.0, "Y": 200.0, "Z": 0.0, "inventory": ["AWP", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player7_CT_7", "is_alive": true, "X": 105.0, "Y": 205.0, "Z": 0.0, "inventory": ["M4A4", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player8_CT_8", "is_alive": true, "X": 110.0, "Y": 210.0, "Z": 0.0, "inventory": ["M4A4", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player9_CT_9", "is_alive": true, "X": 115.0, "Y": 215.0, "Z": 0.0, "inventory": ["M4A4", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player10_CT_10", "is_alive": true, "X": 120.0, "Y": 220.0, "Z": 0.0, "inventory": ["M4A4", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player1_CT_1", "is_alive": true, "X": 600.0, "Y": 700.0, "Z": 0.0, "inventory": ["AK-47", "Glock-18", "Flashbang", "Smoke Grenade", "Molotov"]},
+          {"name": "Player2_CT_2", "is_alive": true, "X": 605.0, "Y": 705.0, "Z": 0.0, "inventory": ["AK-47", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player3_CT_3", "is_alive": true, "X": 610.0, "Y": 710.0, "Z": 0.0, "inventory": ["AK-47", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player4_CT_4", "is_alive": true, "X": 615.0, "Y": 715.0, "Z": 0.0, "inventory": ["AK-47", "Glock-18", "Flashbang", "Smoke Grenade"]},
+          {"name": "Player5_CT_5", "is_alive": true, "X": 1000.0, "Y": 1100.0, "Z": 0.0, "inventory": ["AK-47", "Glock-18", "Flashbang", "Smoke Grenade", "C4"]}
+        ],
+        "is_bomb_planted": false,
+        "bomb_planted_time": null
+      }
+    ]
+  }
+}
