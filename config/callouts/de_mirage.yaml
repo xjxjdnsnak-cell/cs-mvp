@@ -1,5 +1,128 @@
 nearest_threshold: 300
 overview: demo_analysis/static/overviews/de_mirage.png
+smoke_targets:
+  mirage_window_smoke:
+    map: de_mirage
+    intent: execute_smoke
+    target_area: window
+    target_center: [-1174, -744]
+    smoke_radius: 170
+    required_block_lines:
+    - name: window_to_top_mid
+      from_area: window
+      to_area: top_mid
+      from_xy: [-1174, -744]
+      to_xy: [-150, -700]
+    - name: window_to_connector_path
+      from_area: window
+      to_area: connector_entry
+      from_xy: [-1174, -744]
+      to_xy: [-801, -25]
+    teammate_cross_routes:
+    - top_mid_to_connector
+    allowed_leak_tolerance: 0.15
+    counter_he_zones:
+    - name: top_mid_cross
+      name_cn: 中路过点
+      polygon:
+      - [-300, -900]
+      - [100, -900]
+      - [100, -520]
+      - [-300, -520]
+    - name: mid_boxes
+      name_cn: 中箱附近
+      polygon:
+      - [-650, -950]
+      - [-250, -950]
+      - [-250, -540]
+      - [-650, -540]
+    - name: connector_entry
+      name_cn: 拱门入口
+      polygon:
+      - [-950, -250]
+      - [-600, -250]
+      - [-600, 120]
+      - [-950, 120]
+  mirage_ct_cross_smoke:
+    map: de_mirage
+    intent: cross_smoke
+    target_area: ct_spawn
+    target_center: [-1759, -739]
+    smoke_radius: 170
+    required_block_lines:
+    - name: ct_to_cross
+      from_area: ct_spawn
+      to_area: a_cross
+      from_xy: [-1759, -739]
+      to_xy: [-629, -2137]
+    teammate_cross_routes:
+    - a_ramp_to_site
+    allowed_leak_tolerance: 0.15
+  mirage_a_fake_smoke:
+    map: de_mirage
+    intent: fake_smoke
+    target_area: a_site
+    target_center: [-423, -2173]
+    smoke_radius: 170
+    required_block_lines:
+    - name: ct_to_a_default
+      from_area: ct_spawn
+      to_area: a_default
+      from_xy: [-1759, -739]
+      to_xy: [-423, -2173]
+    teammate_cross_routes:
+    - a_ramp_to_site
+    allowed_leak_tolerance: 0.15
+    counter_he_zones:
+    - name: a_cross
+      name_cn: A点过点
+      polygon:
+      - [-850, -2350]
+      - [-350, -2350]
+      - [-350, -1900]
+      - [-850, -1900]
+he_cross_zones:
+- name: a_ramp_cross
+  polygon:
+  - [-900, -2350]
+  - [-350, -2350]
+  - [-350, -1850]
+  - [-900, -1850]
+- name: mid_cross
+  polygon:
+  - [-650, -950]
+  - [100, -950]
+  - [100, -520]
+  - [-650, -520]
+plant_zones:
+- name: a_default
+  polygon:
+  - [-650, -2350]
+  - [-250, -2350]
+  - [-250, -1950]
+  - [-650, -1950]
+fire_targets:
+  mirage_a_ramp_delay_fire:
+    map: de_mirage
+    intent: defensive_delay_fire
+    target_area: a_ramp
+    center: [-629, -2137]
+    radius: 190
+    kind: choke
+  mirage_a_default_anti_plant_fire:
+    map: de_mirage
+    intent: anti_plant_fire
+    target_area: a_default
+    center: [-423, -2173]
+    radius: 210
+    kind: objective
+  mirage_a_fake_pressure_fire:
+    map: de_mirage
+    intent: fake_pressure_fire
+    target_area: a_site
+    center: [-423, -2173]
+    radius: 210
+    kind: objective
 polygons_cn:
 - name: 警家
   points:

@@ -68,6 +68,10 @@ def build_prediction_tick(tick_data: dict[str, Any]) -> PredictionTick:
         players_info=tick_data.get("players_info") or [],
         is_bomb_planted=bool(tick_data.get("is_bomb_planted", False)),
         bomb_planted_time=safe_float(tick_data.get("bomb_planted_time")),
+        projectiles=tick_data.get("projectiles") or [],
+        entity_grenades=tick_data.get("entity_grenades") or [],
+        future_damage=tick_data.get("future_damage") or [],
+        bomb_position=tick_data.get("bomb_position"),
     )
 
 
@@ -208,6 +212,7 @@ def build_round_context(
         bomb_defused_time=bomb_defused_time,
         team1_alive_count=team1_alive,
         team2_alive_count=team2_alive,
+        map_name=round_data.get("map_name", "Unknown"),
     )
 
 
