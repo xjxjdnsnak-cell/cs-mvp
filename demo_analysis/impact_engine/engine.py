@@ -49,6 +49,9 @@ class ImpactEngine:
         self.rounds: list[dict[str, Any]] = []
         self.match_info: dict[str, Any] = {}
         self.warnings: list[str] = []
+        
+        if self.dashboard_payload:
+            self._extract_data()
 
     def load_from_file(self, path: str | Path) -> None:
         """Load dashboard payload from JSON file."""
