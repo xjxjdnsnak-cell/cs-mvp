@@ -695,11 +695,26 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
         "total_rounds": report.total_rounds,
         "match_winner": report.match_winner,
         "confidence": report.confidence,
-        "warnings": report.warnings,
+        "warnings": list(report.warnings),
         "players": [],
     }
 
+    model_clip_count_max = 0
+    model_clip_count_min = 0
+    rating_zero_count = 0
+    rating_hundred_count = 0
+    player_count = len(report.player_impacts)
+
     for player in report.player_impacts:
+        if player.model_impact_score_raw > 50.0:
+            model_clip_count_max += 1
+        if player.model_impact_score_raw < -50.0:
+            model_clip_count_min += 1
+        if player.rating_0_100 <= 0.0:
+            rating_zero_count += 1
+        if player.rating_0_100 >= 100.0:
+            rating_hundred_count += 1
+
         player_data = {
             "player_name": player.player_name,
             "team": player.team,
@@ -709,6 +724,16 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
             "kda": {
                 "kills": player.kda[0],
                 "deaths": player.kda[1],
+            },
+            "diagnostics": {
+                "avg_round_impact": round(player.avg_round_impact, 2),
+                "total_round_impact": round(player.total_round_impact, 2),
+                "model_impact_score_raw": round(player.model_impact_score_raw, 2),
+                "model_impact_score_clipped": round(player.model_impact_score_clipped, 2),
+                "rule_quality_score_raw": round(player.rule_quality_score_raw, 2),
+                "rule_quality_score_clipped": round(player.rule_quality_score_clipped, 2),
+                "kill_impact_total": round(player.kill_impact_total, 2),
+                "death_impact_total": round(player.death_impact_total, 2),
             },
             "round_stats": {
                 "high_impact": player.high_impact_rounds,
@@ -840,5 +865,18 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
             "negative_events": player.negative_death_events[:5],
         }
         result["players"].append(player_data)
+
+    result["diagnostics"] = {
+        "model_impact_clip_count_max": model_clip_count_max,
+        "model_impact_clip_count_min": model_clip_count_min,
+        "rating_zero_count": rating_zero_count,
+        "rating_hundred_count": rating_hundred_count,
+    }
+
+    if player_count > 0 and (model_clip_count_max + model_clip_count_min) / player_count > 0.3:
+        result["warnings"].append(
+            f"Model impact scores are heavily clipped ({model_clip_count_max + model_clip_count_min}/{player_count} players). "
+            "Consider recalibrating scoring weights."
+        )
 
     return result
