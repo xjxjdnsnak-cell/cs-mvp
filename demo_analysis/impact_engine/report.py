@@ -387,7 +387,11 @@ def generate_tactical_section(player: PlayerMatchImpact) -> list[str]:
 def get_player_summary(player: PlayerMatchImpact) -> str:
     """Generate a brief summary for a player."""
     rating = player.rating_0_100
-    team = "CT" if player.team == "team1" else "T"
+    
+    # Count rounds on each side
+    ct_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "CT")
+    t_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "T")
+    side_info = f"CT: {ct_rounds}  T: {t_rounds}"
 
     if rating >= 80:
         verdict = "表现出色"
@@ -404,7 +408,7 @@ def get_player_summary(player: PlayerMatchImpact) -> str:
     assists = sum(len(ri.deaths) for ri in player.round_impacts) - deaths
 
     summary = (
-        f"{player.player_name}（{team}方）"
+        f"{player.player_name}（{side_info}）"
         f"评分: {rating:.0f}/100\n"
         f"KDA: {kills}/{deaths}/{assists}  "
         f"高影响回合: {player.high_impact_rounds}  "
@@ -417,10 +421,14 @@ def get_player_summary(player: PlayerMatchImpact) -> str:
 def generate_player_report(player: PlayerMatchImpact) -> str:
     """Generate detailed Chinese report for a player."""
     rating = player.rating_0_100
-    team = "CT" if player.team == "team1" else "T"
+    
+    # Count rounds on each side
+    ct_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "CT")
+    t_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "T")
+    side_info = f"CT: {ct_rounds}  T: {t_rounds}"
 
     lines = []
-    lines.append(f"# {player.player_name}（{team}方）")
+    lines.append(f"# {player.player_name}（{side_info}）")
     lines.append("")
     lines.append(f"## 综合评分: {rating:.0f} / 100")
     lines.append("")
@@ -698,15 +706,16 @@ def generate_match_report(report: ImpactReport) -> str:
 def generate_summary_table(report: ImpactReport) -> str:
     """Generate a summary table for all players."""
     lines = []
-    lines.append("| 选手 | 阵营 | 评分 | 模型分 | 规则分 | K | D | 首杀 | 补枪 | 白给 | 自造风险 | Hard Duel | Easy Duel |")
-    lines.append("|------|------|------|--------|--------|---|---|------|------|------|---------|-----------|-----------|")
+    lines.append("| 选手 | CT回合 | T回合 | 评分 | 模型分 | 规则分 | K | D | 首杀 | 补枪 | 白给 | 自造风险 | Hard Duel | Easy Duel |")
+    lines.append("|------|------|------|------|--------|--------|---|---|------|------|------|---------|-----------|-----------|")
 
     for player in sorted(report.player_impacts, key=lambda p: p.rating_0_100, reverse=True):
-        team = "CT" if player.team == "team1" else "T"
+        ct_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "CT")
+        t_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "T")
         kills, deaths, _ = player.kda
 
         lines.append(
-            f"| {player.player_name} | {team} | "
+            f"| {player.player_name} | {ct_rounds} | {t_rounds} | "
             f"{player.rating_0_100:.0f} | "
             f"{player.model_impact_score:.1f} | "
             f"{player.rule_quality_score:.1f} | "
@@ -736,9 +745,13 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
     }
 
     for player in report.player_impacts:
+        ct_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "CT")
+        t_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "T")
         player_data = {
             "player_name": player.player_name,
             "team": player.team,
+            "ct_rounds": ct_rounds,
+            "t_rounds": t_rounds,
             "rating_0_100": round(player.rating_0_100, 1),
             "model_impact_score": round(player.model_impact_score, 2),
             "rule_quality_score": round(player.rule_quality_score, 2),

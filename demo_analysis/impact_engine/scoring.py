@@ -372,11 +372,18 @@ def calculate_player_round_impact(
     round_label = determine_round_label(round_total)
 
     player_team = "team1" if player_name in round_context.team1_players else "team2"
+    
+    # Determine player's side in this round
+    if player_team == "team1":
+        player_side = "CT" if round_context.team1_on_ct else "T"
+    else:
+        player_side = "T" if round_context.team1_on_ct else "CT"
 
     player_round = PlayerRoundImpact(
         player_name=player_name,
         round_id=round_context.round_id,
         team=player_team,
+        player_side=player_side,
         kills=kill_impacts,
         deaths=death_impacts,
         objectives=objective_impacts,

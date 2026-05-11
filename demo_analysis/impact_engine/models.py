@@ -199,6 +199,7 @@ class PlayerRoundImpact:
     player_name: str
     round_id: int
     team: str
+    player_side: str = "Unknown"  # "CT" or "T" for this round
 
     kills: list[EventImpact] = field(default_factory=list)
     deaths: list[EventImpact] = field(default_factory=list)
