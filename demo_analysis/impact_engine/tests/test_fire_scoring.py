@@ -186,20 +186,42 @@ class TestFireControlAndObjective(unittest.TestCase):
         self.assertIn("forced_position_fire", impact.labels)
         self.assertGreater(impact.score, 0.0)
 
-    def test_post_plant_fire(self):
+    def test_post_plant_area_fire_no_evidence(self):
         ticks = [
-            tick(10.0, [player("A", 0, 0), player("E", 900, 0)], bomb_position=(500.0, 0.0, 0.0)),
-            tick(13.0, [player("A", 0, 0), player("E", 900, 0)], bomb_position=(500.0, 0.0, 0.0)),
+            tick(10.0, [player("A", 0, 0), player("E", 1200, 0)], bomb_position=(500.0, 0.0, 0.0)),
+            tick(13.0, [player("A", 0, 0), player("E", 1200, 0)], bomb_position=(500.0, 0.0, 0.0)),
         ]
         impact = score_fire_event(
             fire(),
             context(ticks=ticks, bomb_planted_time=8.0, team1_on_ct=False),
             {"obj": target(intent="post_plant_fire", kind="objective")},
         )
-        self.assertIn("post_plant_fire", impact.labels)
-        self.assertGreater(impact.score, 0.0)
+        self.assertIn("post_plant_area_fire", impact.labels)
+        self.assertNotIn("anti_defuse_fire", impact.labels)
+        self.assertLessEqual(impact.score, 0.3)
 
-    def test_anti_defuse_fire(self):
+    def test_anti_defuse_fire_with_ct_damage(self):
+        damage = GameEvent(
+            event_type=EventType.DAMAGE,
+            tick=10.5,
+            player="A",
+            other_player="E",
+            weapon="inferno",
+            damage_health=30,
+        )
+        ticks = [
+            tick(10.0, [player("A", 0, 0), player("E", 520, 0)], bomb_position=(500.0, 0.0, 0.0)),
+            tick(13.0, [player("A", 0, 0), player("E", 520, 0)], bomb_position=(500.0, 0.0, 0.0)),
+        ]
+        impact = score_fire_event(
+            fire(),
+            context(events=[damage], ticks=ticks, bomb_planted_time=8.0, team1_on_ct=False),
+            {"obj": target(intent="anti_defuse_fire", kind="objective")},
+        )
+        self.assertIn("anti_defuse_fire", impact.labels)
+        self.assertGreaterEqual(impact.score, 1.0)
+
+    def test_anti_defuse_fire_with_ct_near(self):
         ticks = [
             tick(10.0, [player("A", 0, 0), player("E", 520, 0)], bomb_position=(500.0, 0.0, 0.0)),
             tick(13.0, [player("A", 0, 0), player("E", 520, 0)], bomb_position=(500.0, 0.0, 0.0)),

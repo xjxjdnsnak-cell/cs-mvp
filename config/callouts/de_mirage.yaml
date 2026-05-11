@@ -81,6 +81,79 @@ smoke_targets:
       - [-350, -2350]
       - [-350, -1900]
       - [-850, -1900]
+  mirage_connector_smoke:
+    map: de_mirage
+    intent: execute_smoke
+    target_area: connector
+    target_center: [-800, -25]
+    smoke_radius: 170
+    required_block_lines:
+    - name: connector_to_top_mid
+      from_xy: [-800, -25]
+      to_xy: [-150, -700]
+    - name: connector_to_a_ramp
+      from_xy: [-800, -25]
+      to_xy: [-629, -2137]
+  mirage_short_smoke:
+    map: de_mirage
+    intent: cross_smoke
+    target_area: short
+    target_center: [-450, -450]
+    smoke_radius: 170
+    required_block_lines:
+    - name: short_to_top_mid
+      from_xy: [-450, -450]
+      to_xy: [-150, -700]
+  mirage_jungle_smoke:
+    map: de_mirage
+    intent: execute_smoke
+    target_area: jungle
+    target_center: [-1100, -1050]
+    smoke_radius: 170
+    required_block_lines:
+    - name: jungle_to_a_default
+      from_xy: [-1100, -1050]
+      to_xy: [-423, -2173]
+  mirage_stairs_smoke:
+    map: de_mirage
+    intent: execute_smoke
+    target_area: stairs
+    target_center: [-750, -1650]
+    smoke_radius: 170
+    required_block_lines:
+    - name: stairs_to_a_ramp
+      from_xy: [-750, -1650]
+      to_xy: [-629, -2137]
+  mirage_ct_smoke:
+    map: de_mirage
+    intent: cross_smoke
+    target_area: ct_spawn
+    target_center: [-1759, -739]
+    smoke_radius: 170
+    required_block_lines:
+    - name: ct_to_a_site
+      from_xy: [-1759, -739]
+      to_xy: [-423, -2173]
+  mirage_market_window_smoke:
+    map: de_mirage
+    intent: execute_smoke
+    target_area: market_window
+    target_center: [-1150, 760]
+    smoke_radius: 170
+    required_block_lines:
+    - name: market_window_to_b_site
+      from_xy: [-1150, 760]
+      to_xy: [-2000, 500]
+  mirage_market_door_smoke:
+    map: de_mirage
+    intent: execute_smoke
+    target_area: market_door
+    target_center: [-1500, 500]
+    smoke_radius: 170
+    required_block_lines:
+    - name: market_door_to_b_site
+      from_xy: [-1500, 500]
+      to_xy: [-2100, 350]
 he_cross_zones:
 - name: a_ramp_cross
   polygon:
@@ -815,3 +888,109 @@ transform:
   - -3230
   - 1713
   scale: 5
+areas:
+  - name: t_spawn
+    name_cn: 匪家
+    type: spawn
+    center: [700, 500]
+    radius: 600
+  - name: a_ramp
+    name_cn: A坡
+    type: choke
+    center: [-629, -2137]
+    radius: 250
+  - name: palace
+    name_cn: 宫殿
+    type: power_position
+    center: [-1100, -2400]
+    radius: 300
+  - name: a_site
+    name_cn: A包
+    type: bombsite
+    center: [-423, -2173]
+    radius: 400
+  - name: default_plant_a
+    name_cn: A默认下包位
+    type: plant_zone
+    center: [-423, -2173]
+    radius: 200
+  - name: triple
+    name_cn: 三明治
+    type: power_position
+    center: [-317, -1553]
+    radius: 200
+  - name: ticket
+    name_cn: 售票亭
+    type: power_position
+    center: [-835, -1880]
+    radius: 200
+  - name: jungle
+    name_cn: 丛林
+    type: rotation_key
+    center: [-1100, -1050]
+    radius: 250
+  - name: stairs
+    name_cn: 楼梯
+    type: rotation_key
+    center: [-750, -1650]
+    radius: 200
+  - name: connector
+    name_cn: 拱门
+    type: choke
+    center: [-800, -25]
+    radius: 250
+  - name: window
+    name_cn: 窗口
+    type: power_position
+    center: [-1174, -744]
+    radius: 250
+  - name: top_mid
+    name_cn: 中远
+    type: choke
+    center: [-150, -700]
+    radius: 300
+  - name: mid_boxes
+    name_cn: 中箱
+    type: choke
+    center: [-450, -730]
+    radius: 250
+  - name: short
+    name_cn: B小
+    type: rotation_key
+    center: [-450, -450]
+    radius: 250
+  - name: b_apps
+    name_cn: B公寓
+    type: choke
+    center: [-1200, 650]
+    radius: 350
+  - name: b_site
+    name_cn: B包
+    type: bombsite
+    center: [-2050, 300]
+    radius: 400
+  - name: bench
+    name_cn: 长椅
+    type: power_position
+    center: [-835, -1880]
+    radius: 200
+  - name: van
+    name_cn: 白车
+    type: power_position
+    center: [-2250, 750]
+    radius: 250
+  - name: market_window
+    name_cn: 超市窗
+    type: rotation_key
+    center: [-1150, 760]
+    radius: 200
+  - name: market_door
+    name_cn: 超市门
+    type: rotation_key
+    center: [-1500, 500]
+    radius: 200
+  - name: ct_spawn
+    name_cn: 警家
+    type: spawn
+    center: [-1759, -739]
+    radius: 500

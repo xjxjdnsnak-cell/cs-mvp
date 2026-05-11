@@ -36,6 +36,7 @@ class PredictionTick:
     projectiles: list[dict[str, Any]] = field(default_factory=list)
     entity_grenades: list[dict[str, Any]] = field(default_factory=list)
     future_damage: list[dict[str, Any]] = field(default_factory=list)
+    future_kills: list[dict[str, Any]] = field(default_factory=list)
     bomb_position: Any = None
 
     def get_player_side_win_rate(
@@ -233,6 +234,9 @@ class PlayerRoundImpact:
 
     key_positives: list[str] = field(default_factory=list)
     key_negatives: list[str] = field(default_factory=list)
+    map_control_impact: float = 0.0
+    tactical_discipline_impact: float = 0.0
+    tactical_events: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -246,6 +250,13 @@ class PlayerMatchImpact:
     total_score: float = 0.0
     model_impact_score: float = 0.0
     rule_quality_score: float = 0.0
+    avg_round_impact: float = 0.0
+    total_round_impact: float = 0.0
+    model_impact_score_raw: float = 0.0
+    model_impact_score_clipped: float = 0.0
+    rule_quality_score_raw: float = 0.0
+    kill_impact_total: float = 0.0
+    death_impact_total: float = 0.0
 
     high_impact_rounds: int = 0
     positive_rounds: int = 0
@@ -296,6 +307,17 @@ class PlayerMatchImpact:
     harmful_fires: int = 0
     forced_smoke_extinguishes: int = 0
 
+    map_control_score: float = 0.0
+    tactical_discipline_score: float = 0.0
+    raw_map_control_score: float = 0.0
+    clipped_map_control_score: float = 0.0
+    raw_tactical_discipline_score: float = 0.0
+    clipped_tactical_discipline_score: float = 0.0
+    key_area_deaths: int = 0
+    post_plant_errors: int = 0
+    valid_entry_sacrifices: int = 0
+    retake_errors: int = 0
+
     he_score: float = 0.0
     he_damage_total: int = 0
     he_kills: int = 0
@@ -318,6 +340,8 @@ class PlayerMatchImpact:
     negative_fire_events: list[dict[str, Any]] = field(default_factory=list)
     positive_he_events: list[dict[str, Any]] = field(default_factory=list)
     negative_he_events: list[dict[str, Any]] = field(default_factory=list)
+    positive_tactical_events: list[dict[str, Any]] = field(default_factory=list)
+    negative_tactical_events: list[dict[str, Any]] = field(default_factory=list)
 
     kda: tuple[int, int, int] = (0, 0, 0)
     rating: float = 0.0
@@ -339,6 +363,7 @@ class ImpactReport:
 
     confidence: str = "high"
     warnings: list[str] = field(default_factory=list)
+    utility_diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

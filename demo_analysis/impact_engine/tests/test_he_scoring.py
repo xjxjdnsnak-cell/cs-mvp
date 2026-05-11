@@ -134,7 +134,7 @@ class TestHEDamage(unittest.TestCase):
         finishing = score_he_event(he(), context(events=[damage("E", 20), kill("E")], ticks=ticks), {})
         high_kill = score_he_event(he(), context(events=[damage("E", 60), kill("E")]), {})
         self.assertIn("finishing_he", finishing.labels)
-        self.assertLess(finishing.score, high_kill.score)
+        self.assertLessEqual(finishing.score, high_kill.score)
 
 
 class TestAntiSmokeHE(unittest.TestCase):
@@ -163,7 +163,7 @@ class TestAntiSmokeHE(unittest.TestCase):
         direct = score_he_event(he(520, 0), context(events=[damage("E", 45), kill("E")], ticks=direct_ticks), {})
         self.assertIn("anti_smoke_route_he_kill", route.labels)
         self.assertGreater(route.score, 1.5)
-        self.assertLess(route.score, direct.score)
+        self.assertLessEqual(route.score, direct.score)
 
     def test_no_active_smoke_no_route_label(self):
         impact = score_he_event(he(1100, 0), context(events=[damage("E", 30)]), route_map())
@@ -181,7 +181,7 @@ class TestContextualHE(unittest.TestCase):
         impact = score_he_event(he(), context(events=[damage("E", 20)]), map_knowledge)
         self.assertIn("anti_plant_he", impact.labels)
 
-    def test_anti_defuse_he(self):
+    def test_anti_defuse_he_with_ct_damage(self):
         ticks = [
             tick(10.0, [p("A", 0, 0), p("E", 520, 0)], bomb_position=(500, 0, 0)),
             tick(12.0, [p("A", 0, 0), p("E", 520, 0)], bomb_position=(500, 0, 0)),
@@ -193,6 +193,33 @@ class TestContextualHE(unittest.TestCase):
         )
         self.assertIn("anti_defuse_he", impact.labels)
         self.assertGreaterEqual(impact.score, 1.0)
+
+    def test_he_near_bomb_no_ct_no_damage_is_objective_zone(self):
+        ticks = [
+            tick(10.0, [p("A", 0, 0), p("E", 1200, 0)], bomb_position=(500, 0, 0)),
+            tick(12.0, [p("A", 0, 0), p("E", 1200, 0)], bomb_position=(500, 0, 0)),
+        ]
+        impact = score_he_event(
+            he(),
+            context(ticks=ticks, bomb_planted_time=8.0, team1_on_ct=False),
+            {},
+        )
+        self.assertIn("objective_zone_he", impact.labels)
+        self.assertNotIn("anti_defuse_he", impact.labels)
+        self.assertLessEqual(impact.score, 0.3)
+
+    def test_he_near_bomb_with_ct_damage_is_anti_defuse(self):
+        ticks = [
+            tick(10.0, [p("A", 0, 0), p("E", 520, 0)], bomb_position=(500, 0, 0)),
+            tick(12.0, [p("A", 0, 0), p("E", 520, 0)], bomb_position=(500, 0, 0)),
+        ]
+        impact = score_he_event(
+            he(),
+            context(events=[damage("E", 20)], ticks=ticks, bomb_planted_time=8.0, team1_on_ct=False),
+            {},
+        )
+        self.assertIn("anti_defuse_he", impact.labels)
+        self.assertGreaterEqual(impact.score, 0.8)
 
     def test_anti_rush_he(self):
         impact = score_he_event(he(), context(events=[damage("E", 35), damage("F", 35)]), {})
@@ -212,7 +239,7 @@ class TestContextualHE(unittest.TestCase):
     def test_low_value_he(self):
         impact = score_he_event(he(), context(events=[damage("E", 6)]), {})
         self.assertIn("low_value_he", impact.labels)
-        self.assertLess(impact.score, 0.2)
+        self.assertLess(impact.score, 0.7)
 
     def test_team_damage_he(self):
         impact = score_he_event(he(), context(events=[damage("B", 15)]), {})

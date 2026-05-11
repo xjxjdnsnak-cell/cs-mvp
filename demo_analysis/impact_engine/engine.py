@@ -33,6 +33,12 @@ from .scoring import (
     calculate_player_match_impact,
     calculate_player_round_impact,
 )
+from .utility_diagnostics import (
+    add_score_extreme_diagnostics,
+    build_round_utility_diagnostics,
+    empty_utility_diagnostics,
+    merge_utility_diagnostics,
+)
 
 
 class ImpactEngine:
@@ -86,6 +92,7 @@ class ImpactEngine:
         player_impact_map: dict[str, PlayerMatchImpact] = {}
         all_player_labels: dict[str, list[str]] = {}
         player_risk_map: dict[str, dict[str, RiskAssessment]] = {}
+        utility_diagnostics = empty_utility_diagnostics()
 
         team1_players = self.match_info.get("team1_players", [])
         team2_players = self.match_info.get("team2_players", [])
@@ -99,6 +106,10 @@ class ImpactEngine:
                 round_data,
                 team1_players,
                 team2_players
+            )
+            utility_diagnostics = merge_utility_diagnostics(
+                utility_diagnostics,
+                build_round_utility_diagnostics(round_context, team1_players + team2_players),
             )
 
             player_risk_assessments: dict[str, RiskAssessment] = {}
@@ -162,6 +173,13 @@ class ImpactEngine:
             player_impact_map[player] = updated
 
         player_impacts = list(player_impact_map.values())
+        utility_diagnostics = add_score_extreme_diagnostics(utility_diagnostics, player_impacts)
+        clip_total = (
+            utility_diagnostics.get("model_impact_clip_count_min", 0)
+            + utility_diagnostics.get("model_impact_clip_count_max", 0)
+        )
+        if clip_total >= max(2, len(player_impacts) // 4):
+            self.warnings.append("model_impact_score appears heavily clipped; rating calibration may need adjustment.")
 
         map_name = self.rounds[0].get("map_name", "Unknown") if self.rounds else "Unknown"
         total_rounds = len(self.rounds)
@@ -185,6 +203,7 @@ class ImpactEngine:
             map_name=map_name,
             confidence="medium" if len(self.warnings) > 0 else "high",
             warnings=self.warnings,
+            utility_diagnostics=utility_diagnostics,
         )
 
         return report

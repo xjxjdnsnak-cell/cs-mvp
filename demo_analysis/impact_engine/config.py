@@ -163,7 +163,7 @@ IMPACT_WEIGHTS = {
         "conversion_window_seconds": 8.0,
         "fake_window_seconds": 20.0,
         "smoke_radius": 170.0,
-        "target_match_radius_multiplier": 1.6,
+        "target_match_radius_multiplier": 1.2,
     },
     "fire_impact": {
         **FIRE_SCORING,

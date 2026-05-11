@@ -745,6 +745,8 @@ def build_round_ticks(round_states, duel_fallback):
             "bomb_position": s.get("bomb_position"),
             "projectiles": s.get("projectiles", []),
             "entity_grenades": s.get("entity_grenades", []),
+            "future_damage": s.get("future_damage", []),
+            "future_kills": s.get("future_kills", []),
         })
     return ticks
 

@@ -9,6 +9,7 @@ from demo_analysis.high_level_analysis import build_dashboard_payload
 
 from .engine import ImpactEngine
 from .report import generate_match_report, report_to_json
+from .utility_diagnostics import print_utility_diagnostics
 
 
 def main():
@@ -47,6 +48,12 @@ def main():
         help="详细输出模式"
     )
 
+    parser.add_argument(
+        "--utility-debug",
+        action="store_true",
+        help="Print utility scoring diagnostics for flash/smoke/fire/HE attribution"
+    )
+
     args = parser.parse_args()
 
     input_path = Path(args.analysis_json)
@@ -81,6 +88,9 @@ def main():
 
     engine = ImpactEngine(dashboard_payload)
     report = engine.analyze()
+
+    if args.utility_debug:
+        print_utility_diagnostics(report.utility_diagnostics)
 
     if args.json_out:
         json_output = report_to_json(report)

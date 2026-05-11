@@ -350,6 +350,40 @@ def generate_he_quality_section(player: PlayerMatchImpact) -> list[str]:
     return lines
 
 
+def generate_tactical_section(player: PlayerMatchImpact) -> list[str]:
+    if player.map_control_score == 0.0 and player.tactical_discipline_score == 0.0 and not player.key_area_deaths and not player.post_plant_errors and not player.valid_entry_sacrifices and not player.retake_errors:
+        return []
+    lines = []
+    lines.append("### 地图战术表现")
+    lines.append("")
+    lines.append(f"- 地图控制分: {player.map_control_score:.1f}")
+    lines.append(f"- 战术纪律分: {player.tactical_discipline_score:.1f}")
+    lines.append(f"- 关键区域白给: {player.key_area_deaths} 次")
+    lines.append(f"- 下包后纪律失误: {player.post_plant_errors} 次")
+    lines.append(f"- 有效进点牺牲: {player.valid_entry_sacrifices} 次")
+    lines.append(f"- 回防纪律失误: {player.retake_errors} 次")
+    lines.append("")
+    if player.positive_tactical_events:
+        lines.append("代表性正面战术行为：")
+        for ev in player.positive_tactical_events[:3]:
+            round_id = ev.get("round", "?")
+            reason = ev.get("reason", "")
+            area_cn = ev.get("area_cn") or ev.get("area") or ""
+            phase = ev.get("phase", "")
+            lines.append(f"- 第 {round_id} 回合：{reason}")
+        lines.append("")
+    if player.negative_tactical_events:
+        lines.append("代表性负面战术行为：")
+        for ev in player.negative_tactical_events[:3]:
+            round_id = ev.get("round", "?")
+            reason = ev.get("reason", "")
+            area_cn = ev.get("area_cn") or ev.get("area") or ""
+            phase = ev.get("phase", "")
+            lines.append(f"- 第 {round_id} 回合：{reason}")
+        lines.append("")
+    return lines
+
+
 def get_player_summary(player: PlayerMatchImpact) -> str:
     """Generate a brief summary for a player."""
     rating = player.rating_0_100
@@ -434,6 +468,7 @@ def generate_player_report(player: PlayerMatchImpact) -> str:
     lines.extend(generate_smoke_quality_section(player))
     lines.extend(generate_fire_quality_section(player))
     lines.extend(generate_he_quality_section(player))
+    lines.extend(generate_tactical_section(player))
 
     if player.positive_kill_events or player.negative_death_events:
         lines.append("### 关键正面行为")
@@ -696,6 +731,7 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
         "match_winner": report.match_winner,
         "confidence": report.confidence,
         "warnings": report.warnings,
+        "utility_diagnostics": report.utility_diagnostics,
         "players": [],
     }
 
@@ -706,6 +742,22 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
             "rating_0_100": round(player.rating_0_100, 1),
             "model_impact_score": round(player.model_impact_score, 2),
             "rule_quality_score": round(player.rule_quality_score, 2),
+            "avg_round_impact": round(player.avg_round_impact, 3),
+            "total_round_impact": round(player.total_round_impact, 3),
+            "model_impact_score_raw": round(player.model_impact_score_raw, 3),
+            "model_impact_score_clipped": round(player.model_impact_score_clipped, 3),
+            "rule_quality_score_raw": round(player.rule_quality_score_raw, 3),
+            "kill_impact_total": round(player.kill_impact_total, 3),
+            "death_impact_total": round(player.death_impact_total, 3),
+            "flash_score": round(player.flash_score, 2),
+            "smoke_score": round(player.smoke_score, 2),
+            "fire_score": round(player.fire_score, 2),
+            "he_score": round(player.he_score, 2),
+            "utility_impact": round(sum(ri.utility_impact for ri in player.round_impacts), 2),
+            "utility_event_count": sum(
+                len(ri.flash_events) + len(ri.smoke_events) + len(ri.fire_events) + len(ri.he_events)
+                for ri in player.round_impacts
+            ),
             "kda": {
                 "kills": player.kda[0],
                 "deaths": player.kda[1],
@@ -775,6 +827,20 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
                     "nade_stack_hits": player.nade_stack_hits,
                     "low_value_hes": player.low_value_hes,
                     "harmful_hes": player.harmful_hes,
+                },
+                "tactical": {
+                    "map_control_score": round(player.map_control_score, 2),
+                    "tactical_discipline_score": round(player.tactical_discipline_score, 2),
+                    "raw_map_control_score": round(player.raw_map_control_score, 2),
+                    "clipped_map_control_score": round(player.clipped_map_control_score, 2),
+                    "raw_tactical_discipline_score": round(player.raw_tactical_discipline_score, 2),
+                    "clipped_tactical_discipline_score": round(player.clipped_tactical_discipline_score, 2),
+                    "key_area_deaths": player.key_area_deaths,
+                    "post_plant_errors": player.post_plant_errors,
+                    "valid_entry_sacrifices": player.valid_entry_sacrifices,
+                    "retake_errors": player.retake_errors,
+                    "positive_tactical_events": player.positive_tactical_events[:10],
+                    "negative_tactical_events": player.negative_tactical_events[:10],
                 },
             },
             "flash_events": [

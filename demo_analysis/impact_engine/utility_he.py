@@ -11,7 +11,19 @@ from .config import get_weight
 from .models import EventType, GameEvent, HEImpact, PredictionTick, RoundContext
 
 
-HE_WEAPONS = {"hegrenade", "he grenade", "weapon_hegrenade", "grenade_he"}
+HE_EXCLUDE_TOKENS = {
+    "flash",
+    "flashbang",
+    "smoke",
+    "smokegrenade",
+    "molotov",
+    "incendiary",
+    "incgrenade",
+    "inferno",
+    "fire",
+    "firebomb",
+    "decoy",
+}
 
 
 @dataclass
@@ -148,6 +160,24 @@ def collect_he_events(round_context: RoundContext) -> list[HEEvent]:
                 events[entityid].tick = tick.round_seconds
                 events[entityid].position = position or events[entityid].position
                 events[entityid].thrower = events[entityid].thrower if events[entityid].thrower != "unknown" else throwers.get(entityid, "unknown")
+        for grenade in tick.entity_grenades:
+            if not is_he_weapon(grenade.get("type") or grenade.get("name")):
+                continue
+            entityid = grenade.get("entityid", f"he-entity-{len(events)}")
+            position = coerce_position(grenade.get("position"))
+            if entityid not in events:
+                events[entityid] = HEEvent(
+                    entityid=entityid,
+                    tick=tick.round_seconds,
+                    position=position,
+                    thrower=grenade.get("name") or throwers.get(entityid) or "unknown",
+                    low_confidence=position is None,
+                )
+            else:
+                events[entityid].tick = tick.round_seconds
+                events[entityid].position = position or events[entityid].position
+                if events[entityid].thrower == "unknown" and grenade.get("name"):
+                    events[entityid].thrower = grenade.get("name")
 
     for damage in he_damage_game_events(round_context):
         entityid = f"he-damage-{damage.player}-{damage.tick}"
@@ -159,7 +189,19 @@ def collect_he_events(round_context: RoundContext) -> list[HEEvent]:
             tick=damage.tick,
             position=position,
             thrower=damage.player or "unknown",
-            low_confidence=position is None,
+            low_confidence=True,
+        )
+
+    for kill in he_kill_game_events(round_context):
+        entityid = f"he-kill-{kill.player}-{kill.tick}"
+        if any(abs(event.tick - kill.tick) <= 0.5 and event.thrower == kill.player for event in events.values()):
+            continue
+        events[entityid] = HEEvent(
+            entityid=entityid,
+            tick=kill.tick,
+            position=player_position_at(round_context, kill.other_player, kill.tick),
+            thrower=kill.player or "unknown",
+            low_confidence=True,
         )
 
     for tick in round_context.ticks:
@@ -167,15 +209,45 @@ def collect_he_events(round_context: RoundContext) -> list[HEEvent]:
             if not is_he_weapon(dmg.get("weapon", "")):
                 continue
             dmg_time = safe_float(dmg.get("time"), tick.round_seconds)
-            thrower = dmg.get("attacker_name") or dmg.get("attacker") or "unknown"
+            thrower = dmg.get("attacker_name") or dmg.get("attacker") or dmg.get("player") or "unknown"
             entityid = f"he-future-{thrower}-{dmg_time}"
-            if entityid in events:
+            if entityid in events or any(abs(event.tick - dmg_time) <= 0.1 and event.thrower == thrower for event in events.values()):
                 continue
             victim = dmg.get("victim_name") or dmg.get("user_name") or dmg.get("player")
             events[entityid] = HEEvent(
                 entityid=entityid,
                 tick=dmg_time,
                 position=player_position_at(round_context, victim, dmg_time),
+                thrower=thrower,
+                low_confidence=True,
+            )
+        for future_kill in tick.future_kills:
+            if not is_he_weapon(future_kill.get("weapon", "")):
+                continue
+            kill_time = safe_float(
+                future_kill.get("time") or future_kill.get("tick") or future_kill.get("round_seconds"),
+                tick.round_seconds,
+            )
+            thrower = (
+                future_kill.get("killer")
+                or future_kill.get("attacker_name")
+                or future_kill.get("attacker")
+                or future_kill.get("player")
+                or "unknown"
+            )
+            victim = (
+                future_kill.get("victim")
+                or future_kill.get("victim_name")
+                or future_kill.get("user_name")
+                or future_kill.get("other_player")
+            )
+            entityid = f"he-kill-{thrower}-{kill_time}"
+            if entityid in events:
+                continue
+            events[entityid] = HEEvent(
+                entityid=entityid,
+                tick=kill_time,
+                position=player_position_at(round_context, victim, kill_time),
                 thrower=thrower,
                 low_confidence=True,
             )
@@ -397,20 +469,65 @@ def score_objective_he(
     score = 0.0
     context: dict[str, Any] | None = None
 
-    if round_context.bomb_planted_time is not None and near_bomb(he_event, round_context):
-        has_enemy_damage = any(not item["team_damage"] for item in damage_events)
-        has_enemy_kill = any(not item["team_kill"] for item in kill_events)
-        if ct_near_bomb_after(he_event, round_context) or has_enemy_damage or has_enemy_kill:
-            labels.append("anti_defuse_he")
-            score += get_weight("he_impact.anti_defuse_bonus", 1.0)
-            reasons.append("HE 落在炸弹/拆包区域附近，阻止或打断 CT 拆包")
-            context = {"type": "anti_defuse", "near_bomb": True}
+    bomb_planted = round_context.bomb_planted_time is not None
+    near_bomb_flag = near_bomb(he_event, round_context)
+
+    ct_in_bomb_radius = False
+    if bomb_planted and near_bomb_flag:
+        for tick in round_context.ticks:
+            if not 0 <= tick.round_seconds - he_event.tick <= 4.0:
+                continue
+            bomb = coerce_position(tick.bomb_position)
+            if bomb is None:
+                continue
+            for info in tick.players_info:
+                name = info.get("name")
+                if not name or not is_ct(name, round_context):
+                    continue
+                pos = player_position(info)
+                if pos and calculate_distance_2d(pos[0], pos[1], bomb[0], bomb[1]) <= 500.0:
+                    ct_in_bomb_radius = True
+                    break
+            if ct_in_bomb_radius:
+                break
+
+    has_ct_damage = any(
+        not item["team_damage"] and is_ct(item.get("victim", ""), round_context)
+        for item in damage_events
+    )
+
+    if bomb_planted and near_bomb_flag and (has_ct_damage or ct_in_bomb_radius or any(not item["team_kill"] for item in kill_events)):
+        labels.append("anti_defuse_he")
+        score += get_weight("he_impact.anti_defuse_bonus", 0.8)
+        reasons.append("HE 在已下包区域爆炸，阻止拆包")
+        context = {"type": "anti_defuse", "near_bomb": True}
+    elif bomb_planted and near_bomb_flag:
+        labels.append("objective_zone_he")
+        score += 0.2
+        reasons.append("HE 投向包点区域，但无明确拆包影响")
+        context = {"type": "objective_zone"}
     elif any(point_in_zone(he_event.position, zone) for zone in map_knowledge.get("plant_zones", [])):
         if enemies_near_he(he_event, round_context) > 0 or any(not item["team_damage"] for item in damage_events):
             labels.append("anti_plant_he")
-            score += get_weight("he_impact.anti_plant_bonus", 0.8)
-            reasons.append("HE 覆盖默认下包点或下包路线，阻止/延迟下包")
+            score += get_weight("he_impact.anti_plant_bonus", 0.5)
+            reasons.append("HE 投向包点阻止下包")
+            if any(not item["team_damage"] for item in damage_events):
+                score += 0.5
+                reasons.append("HE 对正在下包的 T 造成伤害")
             context = {"type": "anti_plant"}
+    elif not bomb_planted and any(point_in_zone(he_event.position, zone) for zone in map_knowledge.get("plant_zones", [])):
+        labels.append("post_plant_he")
+        score += 0.3
+        reasons.append("HE 投向包点区域")
+        context = {"type": "post_plant"}
+
+    if any(not item["team_damage"] for item in damage_events):
+        score += 0.5
+        reasons.append("HE 造成伤害")
+    if any(not item["team_kill"] for item in kill_events):
+        score += 1.0
+        reasons.append("HE 造成击杀")
+
     return score, labels, reasons, context
 
 
@@ -489,6 +606,7 @@ def detect_low_value_he(
 
 def collect_he_damage_events(he_event: HEEvent, round_context: RoundContext) -> list[dict[str, Any]]:
     items = []
+    seen: set[tuple[float, str, str, int]] = set()
     thrower_team = get_player_team(he_event.thrower, round_context)
     for event in he_damage_game_events(round_context):
         if abs(event.tick - he_event.tick) > get_weight("he_impact.damage_window_seconds", 2.0):
@@ -498,6 +616,10 @@ def collect_he_damage_events(he_event: HEEvent, round_context: RoundContext) -> 
         victim = event.other_player or event.player
         health_before = player_health_before(round_context, victim, event.tick)
         victim_position = player_position_at(round_context, victim, event.tick)
+        key = (round(event.tick, 3), str(event.player), str(victim), int(event.damage_health or 0))
+        if key in seen:
+            continue
+        seen.add(key)
         items.append({
             "tick": event.tick,
             "attacker": event.player,
@@ -519,6 +641,10 @@ def collect_he_damage_events(he_event: HEEvent, round_context: RoundContext) -> 
                 continue
             victim = dmg.get("victim_name") or dmg.get("user_name") or dmg.get("player")
             damage = int(safe_float(dmg.get("dmg_health") or dmg.get("damage_health") or dmg.get("damage"), 0))
+            key = (round(dmg_time, 3), str(attacker), str(victim), damage)
+            if key in seen:
+                continue
+            seen.add(key)
             items.append({
                 "tick": dmg_time,
                 "attacker": attacker,
@@ -533,6 +659,7 @@ def collect_he_damage_events(he_event: HEEvent, round_context: RoundContext) -> 
 
 def collect_he_kill_events(he_event: HEEvent, round_context: RoundContext) -> list[dict[str, Any]]:
     items = []
+    seen: set[tuple[float, str, str]] = set()
     thrower_team = get_player_team(he_event.thrower, round_context)
     for event in round_context.events:
         if event.event_type != EventType.KILL:
@@ -544,12 +671,50 @@ def collect_he_kill_events(he_event: HEEvent, round_context: RoundContext) -> li
         if abs(event.tick - he_event.tick) > get_weight("he_impact.damage_window_seconds", 2.0):
             continue
         victim = event.other_player
+        key = (round(event.tick, 3), str(event.player), str(victim))
+        if key in seen:
+            continue
+        seen.add(key)
         items.append({
             "tick": event.tick,
             "killer": event.player,
             "victim": victim,
             "team_kill": get_player_team(victim, round_context) == thrower_team,
         })
+    for tick in round_context.ticks:
+        for future_kill in tick.future_kills:
+            if not is_he_weapon(future_kill.get("weapon", "")):
+                continue
+            kill_time = safe_float(
+                future_kill.get("time") or future_kill.get("tick") or future_kill.get("round_seconds"),
+                tick.round_seconds,
+            )
+            if abs(kill_time - he_event.tick) > get_weight("he_impact.damage_window_seconds", 2.0):
+                continue
+            killer = (
+                future_kill.get("killer")
+                or future_kill.get("attacker_name")
+                or future_kill.get("attacker")
+                or future_kill.get("player")
+            )
+            if killer != he_event.thrower:
+                continue
+            victim = (
+                future_kill.get("victim")
+                or future_kill.get("victim_name")
+                or future_kill.get("user_name")
+                or future_kill.get("other_player")
+            )
+            key = (round(kill_time, 3), str(killer), str(victim))
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append({
+                "tick": kill_time,
+                "killer": killer,
+                "victim": victim,
+                "team_kill": get_player_team(victim, round_context) == thrower_team,
+            })
     return items
 
 
@@ -557,6 +722,13 @@ def he_damage_game_events(round_context: RoundContext) -> list[GameEvent]:
     return [
         event for event in round_context.events
         if event.event_type == EventType.DAMAGE and is_he_weapon(event.weapon)
+    ]
+
+
+def he_kill_game_events(round_context: RoundContext) -> list[GameEvent]:
+    return [
+        event for event in round_context.events
+        if event.event_type == EventType.KILL and is_he_weapon(event.weapon)
     ]
 
 
@@ -755,8 +927,27 @@ def is_ct(player_name: str, round_context: RoundContext) -> bool:
 
 
 def is_he_weapon(value: Any) -> bool:
+    text = normalize_weapon_text(value)
+    if not text:
+        return False
+    tokens = set(text.split())
+    compact = text.replace(" ", "")
+    if tokens & HE_EXCLUDE_TOKENS:
+        return False
+    if compact in {"he", "hegrenade", "grenadehe"}:
+        return True
+    if "hegrenade" in compact:
+        return True
+    if {"high", "explosive", "grenade"}.issubset(tokens):
+        return True
+    return "he" in tokens and "grenade" in tokens
+
+
+def normalize_weapon_text(value: Any) -> str:
     text = str(value or "").lower()
-    return any(word in text for word in HE_WEAPONS)
+    for old in ("weapon_", "csweapon_", "-", "_"):
+        text = text.replace(old, " ")
+    return " ".join(text.split())
 
 
 def get_player_team(player_name: str | None, round_context: RoundContext) -> str:

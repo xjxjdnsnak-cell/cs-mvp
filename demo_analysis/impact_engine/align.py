@@ -71,6 +71,7 @@ def build_prediction_tick(tick_data: dict[str, Any]) -> PredictionTick:
         projectiles=tick_data.get("projectiles") or [],
         entity_grenades=tick_data.get("entity_grenades") or [],
         future_damage=tick_data.get("future_damage") or [],
+        future_kills=tick_data.get("future_kills") or [],
         bomb_position=tick_data.get("bomb_position"),
     )
 
@@ -163,6 +164,81 @@ def extract_bomb_plant_events(
     return events
 
 
+def first_present(data: dict[str, Any], keys: list[str], default: Any = None) -> Any:
+    for key in keys:
+        value = data.get(key)
+        if value is not None:
+            return value
+    return default
+
+
+def extract_damage_events(round_data: dict[str, Any]) -> list[GameEvent]:
+    """Extract damage events from per-tick future_damage payloads with strict dedup."""
+    events: list[GameEvent] = []
+    seen: set[tuple[float, str, str, str, int]] = set()
+    for tick in round_data.get("ticks", []):
+        for damage in tick.get("future_damage") or []:
+            damage_time = safe_float(
+                first_present(damage, ["time", "round_seconds"], None),
+                safe_float(tick.get("round_seconds", 0.0)),
+            )
+            attacker = first_present(damage, ["attacker_name", "attacker", "player"], "")
+            victim = first_present(damage, ["victim_name", "victim", "user_name", "other_player"], "")
+            weapon = first_present(damage, ["weapon"], None)
+            damage_health = safe_int(first_present(damage, ["dmg_health", "damage_health", "damage"], 0))
+            if not attacker or not victim:
+                continue
+            key = (round(damage_time, 3), str(attacker), str(victim), str(weapon or ""), damage_health)
+            if key in seen:
+                continue
+            seen.add(key)
+            events.append(GameEvent(
+                event_type=EventType.DAMAGE,
+                tick=damage_time,
+                player=str(attacker),
+                other_player=str(victim),
+                weapon=None if weapon is None else str(weapon),
+                damage_health=damage_health,
+            ))
+    return events
+
+
+def extract_future_kill_events(round_data: dict[str, Any]) -> list[GameEvent]:
+    """Extract low-confidence kill-like events from per-tick future_kills payloads."""
+    existing = {
+        (
+            round(safe_float(kill.get("round_seconds", 0.0)), 3),
+            str(kill.get("killer", "")),
+            str(kill.get("victim", "")),
+            str(kill.get("weapon", "")),
+        )
+        for kill in round_data.get("kills", [])
+    }
+    events: list[GameEvent] = []
+    seen: set[tuple[float, str, str, str]] = set(existing)
+    for tick in round_data.get("ticks", []):
+        tick_time = safe_float(tick.get("round_seconds", 0.0))
+        for kill in tick.get("future_kills") or []:
+            kill_time = safe_float(first_present(kill, ["time", "tick", "round_seconds"], tick_time), tick_time)
+            killer = first_present(kill, ["killer", "attacker_name", "attacker", "player"], "")
+            victim = first_present(kill, ["victim", "victim_name", "user_name", "other_player"], "")
+            weapon = first_present(kill, ["weapon"], None)
+            if not killer or not victim:
+                continue
+            key = (round(kill_time, 3), str(killer), str(victim), str(weapon or ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            events.append(GameEvent(
+                event_type=EventType.KILL,
+                tick=kill_time,
+                player=str(killer),
+                other_player=str(victim),
+                weapon=None if weapon is None else str(weapon),
+            ))
+    return events
+
+
 def safe_int(value: Any, default: int = 0) -> int:
     """Safely convert a value to int."""
     try:
@@ -186,6 +262,8 @@ def build_round_context(
     events = []
     events.extend(extract_kill_events(round_data, team1_players, team2_players, team1_on_ct))
     events.extend(extract_bomb_plant_events(round_data, team1_players, team2_players))
+    events.extend(extract_damage_events(round_data))
+    events.extend(extract_future_kill_events(round_data))
 
     events.sort(key=lambda e: e.tick)
 

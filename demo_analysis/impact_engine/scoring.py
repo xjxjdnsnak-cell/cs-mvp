@@ -35,6 +35,7 @@ from .utility_flash import calculate_player_flash_impact
 from .utility_fire import calculate_player_fire_impact
 from .utility_he import calculate_player_he_impact
 from .utility_smoke import calculate_player_smoke_impact
+from .tactical_scoring import calculate_player_tactical_impact, TacticalEvent
 
 
 def calculate_win_rate_delta(
@@ -338,6 +339,8 @@ def calculate_player_round_impact(
     smoke_impact_total, smoke_events = calculate_player_smoke_impact(player_name, round_context)
     fire_impact_total, fire_events = calculate_player_fire_impact(player_name, round_context)
     he_impact_total, he_events = calculate_player_he_impact(player_name, round_context)
+    map_control_impact, tactical_discipline_impact, tactical_events = calculate_player_tactical_impact(player_name, round_context)
+    tactical_event_dicts = [{"player": e.player, "round_id": e.round_id, "tick": e.tick, "label": e.label, "score": e.score, "reason": e.reason, "area": e.area, "area_cn": e.area_cn, "phase": e.phase} for e in tactical_events]
     utility_impact_total = flash_impact_total + smoke_impact_total + fire_impact_total + he_impact_total
 
     round_total = (
@@ -347,6 +350,8 @@ def calculate_player_round_impact(
         + objective_impact_total
         + clutch_impact_total
         + utility_impact_total
+        + map_control_impact
+        + tactical_discipline_impact
     )
 
     round_label = determine_round_label(round_total)
@@ -375,6 +380,9 @@ def calculate_player_round_impact(
         fire_events=fire_events,
         he_impact=he_impact_total,
         he_events=he_events,
+        map_control_impact=map_control_impact,
+        tactical_discipline_impact=tactical_discipline_impact,
+        tactical_events=tactical_event_dicts,
         round_total_impact=round_total,
         round_label=round_label,
     )
@@ -458,6 +466,15 @@ def calculate_player_match_impact(
     forced_smoke_extinguishes = sum(1 for l in fire_labels if l == "forced_smoke_extinguish")
     he_labels = [label for ri in round_impacts for he in ri.he_events for label in he.labels]
     he_score = sum(ri.he_impact for ri in round_impacts)
+    map_control_score_raw = sum(ri.map_control_impact for ri in round_impacts)
+    map_control_score = max(-6.0, min(6.0, map_control_score_raw))
+    tactical_discipline_score_raw = sum(ri.tactical_discipline_impact for ri in round_impacts)
+    tactical_discipline_score = max(-8.0, min(8.0, tactical_discipline_score_raw))
+    tactical_labels = [ev.get("label") for ri in round_impacts for ev in ri.tactical_events]
+    key_area_deaths = sum(1 for l in tactical_labels if l == "key_area_isolated_death")
+    post_plant_errors = sum(1 for l in tactical_labels if l == "post_plant_discipline_error")
+    valid_entry_sacrifices = sum(1 for l in tactical_labels if l == "valid_entry_sacrifice")
+    retake_errors = sum(1 for l in tactical_labels if l == "retake_solo_feed")
     he_damage_total = sum(
         int(damage.get("damage", 0))
         for ri in round_impacts
@@ -475,12 +492,14 @@ def calculate_player_match_impact(
     low_value_hes = sum(1 for l in he_labels if l == "low_value_he")
     harmful_hes = sum(1 for l in he_labels if l == "harmful_he")
 
-    model_impact_score = calculate_model_impact_score(round_impacts, player_labels)
-    rule_quality_score = calculate_rule_quality_score(
+    model_impact_score_raw = calculate_model_impact_score_raw(round_impacts, player_labels)
+    model_impact_score = max(-50, min(50, model_impact_score_raw))
+    rule_quality_score_raw = calculate_rule_quality_score_raw(
         round_impacts, player_labels,
         effective_trades, trades_taken, bad_deaths,
         self_created_risk_deaths, forced_risk_deaths
     )
+    rule_quality_score = max(-50, min(50, rule_quality_score_raw))
 
     model_weight = get_weight("model_vs_rule_weight.model_impact", 0.65)
     rule_weight = get_weight("model_vs_rule_weight.rule_quality", 0.35)
@@ -491,6 +510,8 @@ def calculate_player_match_impact(
     # 使用按回合数归一化的方法
     total_round_impact = sum(ri.round_total_impact for ri in round_impacts)
     avg_round_impact = total_round_impact / round_count
+    kill_impact_total = sum(ri.kill_impact for ri in round_impacts)
+    death_impact_total = sum(ri.death_impact for ri in round_impacts)
 
     # 基础 50 分，加上平均回合影响放大
     rating_0_100 = 50 + avg_round_impact * 10
@@ -624,6 +645,27 @@ def calculate_player_match_impact(
     positive_he_events.sort(key=lambda x: x["impact"], reverse=True)
     negative_he_events.sort(key=lambda x: x["impact"])
 
+    positive_tactical_events = []
+    negative_tactical_events = []
+    for ri in round_impacts:
+        for ev in ri.tactical_events:
+            event_data = {
+                "round": ev.get("round_id", ri.round_id),
+                "tick": ev.get("tick"),
+                "phase": ev.get("phase", ""),
+                "area": ev.get("area"),
+                "area_cn": ev.get("area_cn"),
+                "label": ev.get("label", ""),
+                "impact": ev.get("score", 0.0),
+                "reason": ev.get("reason", ""),
+            }
+            if ev.get("score", 0.0) > 0:
+                positive_tactical_events.append(event_data)
+            elif ev.get("score", 0.0) < 0:
+                negative_tactical_events.append(event_data)
+    positive_tactical_events.sort(key=lambda x: x["impact"], reverse=True)
+    negative_tactical_events.sort(key=lambda x: x["impact"])
+
     return PlayerMatchImpact(
         player_name=player_name,
         team=team,
@@ -631,6 +673,13 @@ def calculate_player_match_impact(
         total_score=total_score,
         model_impact_score=model_impact_score,
         rule_quality_score=rule_quality_score,
+        avg_round_impact=avg_round_impact,
+        total_round_impact=total_round_impact,
+        model_impact_score_raw=model_impact_score_raw,
+        model_impact_score_clipped=model_impact_score,
+        rule_quality_score_raw=rule_quality_score_raw,
+        kill_impact_total=kill_impact_total,
+        death_impact_total=death_impact_total,
         high_impact_rounds=high_impact_rounds,
         positive_rounds=positive_rounds,
         neutral_rounds=neutral_rounds,
@@ -672,6 +721,16 @@ def calculate_player_match_impact(
         harmful_fires=harmful_fires,
         forced_smoke_extinguishes=forced_smoke_extinguishes,
         he_score=he_score,
+        map_control_score=map_control_score,
+        tactical_discipline_score=tactical_discipline_score,
+        raw_map_control_score=map_control_score_raw,
+        clipped_map_control_score=map_control_score,
+        raw_tactical_discipline_score=tactical_discipline_score_raw,
+        clipped_tactical_discipline_score=tactical_discipline_score,
+        key_area_deaths=key_area_deaths,
+        post_plant_errors=post_plant_errors,
+        valid_entry_sacrifices=valid_entry_sacrifices,
+        retake_errors=retake_errors,
         he_damage_total=he_damage_total,
         he_kills=he_kills,
         anti_smoke_he_kills=anti_smoke_he_kills,
@@ -692,6 +751,8 @@ def calculate_player_match_impact(
         negative_fire_events=negative_fire_events[:5],
         positive_he_events=positive_he_events[:5],
         negative_he_events=negative_he_events[:5],
+        positive_tactical_events=positive_tactical_events[:10],
+        negative_tactical_events=negative_tactical_events[:10],
         kda=(kills_total, deaths_total, sum(1 for ri in round_impacts for _ in ri.deaths)),
         rating=rating,
         rating_0_100=rating_0_100,
@@ -702,7 +763,15 @@ def calculate_model_impact_score(
     round_impacts: list[PlayerRoundImpact],
     player_labels: list[str]
 ) -> float:
-    """Calculate the model-based impact score."""
+    """Calculate the clipped model-based impact score."""
+    return max(-50, min(50, calculate_model_impact_score_raw(round_impacts, player_labels)))
+
+
+def calculate_model_impact_score_raw(
+    round_impacts: list[PlayerRoundImpact],
+    player_labels: list[str]
+) -> float:
+    """Calculate the raw model-based impact score before clipping."""
     if not round_impacts:
         return 0.0
 
@@ -720,7 +789,7 @@ def calculate_model_impact_score(
 
     model_score = base_score + hard_duel_bonus - easy_duel_penalty - unexpected_penalty
 
-    return max(-50, min(50, model_score))
+    return model_score
 
 
 def calculate_rule_quality_score(
@@ -732,7 +801,28 @@ def calculate_rule_quality_score(
     self_created_risk_deaths: int,
     forced_risk_deaths: int
 ) -> float:
-    """Calculate the rule-based quality score."""
+    """Calculate the clipped rule-based quality score."""
+    return max(-50, min(50, calculate_rule_quality_score_raw(
+        round_impacts,
+        player_labels,
+        effective_trades,
+        trades_taken,
+        bad_deaths,
+        self_created_risk_deaths,
+        forced_risk_deaths,
+    )))
+
+
+def calculate_rule_quality_score_raw(
+    round_impacts: list[PlayerRoundImpact],
+    player_labels: list[str],
+    effective_trades: int,
+    trades_taken: int,
+    bad_deaths: int,
+    self_created_risk_deaths: int,
+    forced_risk_deaths: int
+) -> float:
+    """Calculate the raw rule-based quality score before clipping."""
     trade_bonus = effective_trades * 0.5
     trade_penalty = trades_taken * 0.3
     bad_death_penalty = bad_deaths * 0.8
@@ -741,4 +831,4 @@ def calculate_rule_quality_score(
 
     rule_score = trade_bonus + forced_risk_bonus - trade_penalty - bad_death_penalty - self_created_penalty
 
-    return max(-50, min(50, rule_score))
+    return rule_score
