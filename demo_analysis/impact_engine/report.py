@@ -368,7 +368,22 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
         "players": [],
     }
 
+    # Report-level diagnostics for score calibration
+    model_impact_clip_count_min = 0
+    model_impact_clip_count_max = 0
+    rating_zero_count = 0
+    rating_hundred_count = 0
+
     for player in report.player_impacts:
+        if player.model_impact_score_raw < -50:
+            model_impact_clip_count_min += 1
+        if player.model_impact_score_raw > 50:
+            model_impact_clip_count_max += 1
+        if player.rating_0_100 <= 0.0:
+            rating_zero_count += 1
+        if player.rating_0_100 >= 100.0:
+            rating_hundred_count += 1
+
         player_data = {
             "player_name": player.player_name,
             "team": player.team,
@@ -407,7 +422,35 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
             },
             "positive_events": player.positive_kill_events[:5],
             "negative_events": player.negative_death_events[:5],
+            # Diagnostic fields
+            "diagnostics": {
+                "avg_round_impact": round(player.avg_round_impact, 3),
+                "total_round_impact": round(player.total_round_impact, 2),
+                "model_impact_score_raw": round(player.model_impact_score_raw, 2),
+                "model_impact_score_clipped": round(player.model_impact_score_clipped, 2),
+                "rule_quality_score_raw": round(player.rule_quality_score_raw, 2),
+                "rule_quality_score_clipped": round(player.rule_quality_score_clipped, 2),
+                "kill_impact_total": round(player.kill_impact_total, 2),
+                "death_impact_total": round(player.death_impact_total, 2),
+            },
         }
         result["players"].append(player_data)
+
+    # Add report-level diagnostics
+    result["diagnostics"] = {
+        "model_impact_clip_count_min": model_impact_clip_count_min,
+        "model_impact_clip_count_max": model_impact_clip_count_max,
+        "rating_zero_count": rating_zero_count,
+        "rating_hundred_count": rating_hundred_count,
+    }
+
+    # Add warning if model impact is heavily clipped
+    total_players = len(report.player_impacts)
+    if total_players > 0:
+        clip_ratio = (model_impact_clip_count_min + model_impact_clip_count_max) / total_players
+        if clip_ratio >= 0.3:
+            warning = "model_impact_score appears heavily clipped; rating calibration may need adjustment."
+            if warning not in result["warnings"]:
+                result["warnings"].append(warning)
 
     return result

@@ -405,12 +405,18 @@ def calculate_player_match_impact(
     post_plant_throw_deaths = sum(1 for l in player_labels if l == "post_plant_throw_death")
     bomb_carrier_died_alone = sum(1 for l in player_labels if l == "bomb_carrier_died_alone")
 
-    model_impact_score = calculate_model_impact_score(round_impacts, player_labels)
-    rule_quality_score = calculate_rule_quality_score(
+    model_impact_score_raw, model_impact_score_clipped = calculate_model_impact_score_raw(
+        round_impacts, player_labels
+    )
+    rule_quality_score_raw, rule_quality_score_clipped = calculate_rule_quality_score_raw(
         round_impacts, player_labels,
         effective_trades, trades_taken, bad_deaths,
         self_created_risk_deaths, forced_risk_deaths
     )
+
+    # Keep backward-compatible clipped values as the main scores
+    model_impact_score = model_impact_score_clipped
+    rule_quality_score = rule_quality_score_clipped
 
     model_weight = get_weight("model_vs_rule_weight.model_impact", 0.65)
     rule_weight = get_weight("model_vs_rule_weight.rule_quality", 0.35)
@@ -435,6 +441,8 @@ def calculate_player_match_impact(
 
     kills_total = sum(len(ri.kills) for ri in round_impacts)
     deaths_total = sum(len(ri.deaths) for ri in round_impacts)
+    kill_impact_total = sum(ri.kill_impact for ri in round_impacts)
+    death_impact_total = sum(ri.death_impact for ri in round_impacts)
 
     positive_events = []
     negative_events = []
@@ -497,16 +505,24 @@ def calculate_player_match_impact(
         kda=(kills_total, deaths_total, sum(1 for ri in round_impacts for _ in ri.deaths)),
         rating=rating,
         rating_0_100=rating_0_100,
+        avg_round_impact=avg_round_impact,
+        total_round_impact=total_round_impact,
+        model_impact_score_raw=model_impact_score_raw,
+        model_impact_score_clipped=model_impact_score_clipped,
+        rule_quality_score_raw=rule_quality_score_raw,
+        rule_quality_score_clipped=rule_quality_score_clipped,
+        kill_impact_total=kill_impact_total,
+        death_impact_total=death_impact_total,
     )
 
 
-def calculate_model_impact_score(
+def calculate_model_impact_score_raw(
     round_impacts: list[PlayerRoundImpact],
     player_labels: list[str]
-) -> float:
-    """Calculate the model-based impact score."""
+) -> tuple[float, float]:
+    """Calculate the model-based impact score, returning (raw, clipped)."""
     if not round_impacts:
-        return 0.0
+        return 0.0, 0.0
 
     total_rwi = sum(ri.round_total_impact for ri in round_impacts)
 
@@ -520,9 +536,42 @@ def calculate_model_impact_score(
     easy_duel_penalty = easy_duel_losses * 0.6
     unexpected_penalty = unexpected_deaths * 0.4
 
-    model_score = base_score + hard_duel_bonus - easy_duel_penalty - unexpected_penalty
+    raw_score = base_score + hard_duel_bonus - easy_duel_penalty - unexpected_penalty
+    clipped_score = max(-50, min(50, raw_score))
 
-    return max(-50, min(50, model_score))
+    return raw_score, clipped_score
+
+
+def calculate_rule_quality_score_raw(
+    round_impacts: list[PlayerRoundImpact],
+    player_labels: list[str],
+    effective_trades: int,
+    trades_taken: int,
+    bad_deaths: int,
+    self_created_risk_deaths: int,
+    forced_risk_deaths: int
+) -> tuple[float, float]:
+    """Calculate the rule-based quality score, returning (raw, clipped)."""
+    trade_bonus = effective_trades * 0.5
+    trade_penalty = trades_taken * 0.3
+    bad_death_penalty = bad_deaths * 0.8
+    self_created_penalty = self_created_risk_deaths * 0.6
+    forced_risk_bonus = forced_risk_deaths * 0.3
+
+    raw_score = trade_bonus + forced_risk_bonus - trade_penalty - bad_death_penalty - self_created_penalty
+    clipped_score = max(-50, min(50, raw_score))
+
+    return raw_score, clipped_score
+
+
+# Backward-compatible wrappers
+def calculate_model_impact_score(
+    round_impacts: list[PlayerRoundImpact],
+    player_labels: list[str]
+) -> float:
+    """Calculate the model-based impact score (clipped, backward-compatible)."""
+    _raw, clipped = calculate_model_impact_score_raw(round_impacts, player_labels)
+    return clipped
 
 
 def calculate_rule_quality_score(
@@ -534,13 +583,10 @@ def calculate_rule_quality_score(
     self_created_risk_deaths: int,
     forced_risk_deaths: int
 ) -> float:
-    """Calculate the rule-based quality score."""
-    trade_bonus = effective_trades * 0.5
-    trade_penalty = trades_taken * 0.3
-    bad_death_penalty = bad_deaths * 0.8
-    self_created_penalty = self_created_risk_deaths * 0.6
-    forced_risk_bonus = forced_risk_deaths * 0.3
-
-    rule_score = trade_bonus + forced_risk_bonus - trade_penalty - bad_death_penalty - self_created_penalty
-
-    return max(-50, min(50, rule_score))
+    """Calculate the rule-based quality score (clipped, backward-compatible)."""
+    _raw, clipped = calculate_rule_quality_score_raw(
+        round_impacts, player_labels,
+        effective_trades, trades_taken, bad_deaths,
+        self_created_risk_deaths, forced_risk_deaths
+    )
+    return clipped
