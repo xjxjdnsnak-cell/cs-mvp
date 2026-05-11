@@ -23,6 +23,7 @@ class FireEvent:
     thrower: str = "unknown"
     fire_type: str = "inferno"
     low_confidence: bool = False
+    attribution_method: str = "unknown"
 
 
 @dataclass
@@ -154,6 +155,7 @@ def score_fire_event(
 
 def collect_fire_events(round_context: RoundContext) -> list[FireEvent]:
     events: dict[Any, FireEvent] = {}
+    # 1. inferno projectiles with direct thrower
     for tick in sorted(round_context.ticks, key=lambda item: item.round_seconds):
         for projectile in tick.projectiles:
             if projectile.get("type") != "inferno":
@@ -164,27 +166,140 @@ def collect_fire_events(round_context: RoundContext) -> list[FireEvent]:
                 continue
             duration = safe_float(projectile.get("duration"), 0.0)
             start_tick = max(0.0, tick.round_seconds - duration)
+            thrower = projectile.get("name") or "unknown"
             if entityid not in events:
                 events[entityid] = FireEvent(
                     entityid=entityid,
                     start_tick=start_tick,
                     end_tick=tick.round_seconds,
                     position=position,
-                    thrower=projectile.get("name") or "unknown",
+                    thrower=thrower,
                     fire_type="inferno",
+                    attribution_method="entityid_direct" if thrower != "unknown" else "unknown",
                 )
             else:
                 events[entityid].end_tick = tick.round_seconds
                 events[entityid].position = position
+                if events[entityid].thrower == "unknown" and thrower != "unknown":
+                    events[entityid].thrower = thrower
+                    events[entityid].attribution_method = "entityid_direct"
 
+    # 2. entity_grenade_match attribution
     throwers = infer_fire_throwers(round_context)
     for fire in events.values():
         if fire.thrower == "unknown":
-            fire.thrower = throwers.get(fire.entityid) or infer_inventory_thrower(fire, round_context)
+            matched_thrower = throwers.get(fire.entityid)
+            if matched_thrower:
+                fire.thrower = matched_thrower
+                fire.attribution_method = "entity_grenade_match"
+
+    # 3. projectile_position_time: molotov/incendiary projectile last position matches inferno start
+    _attribute_by_projectile_position(events, round_context)
+
+    # 4. inventory_drop inference
+    for fire in events.values():
+        if fire.thrower == "unknown":
+            inferred = infer_inventory_thrower(fire, round_context)
+            if inferred != "unknown":
+                fire.thrower = inferred
+                fire.attribution_method = "inventory_drop"
+
+    # 5. damage_attacker from DAMAGE events and future_damage
+    _attribute_and_generate_from_damage(events, round_context)
+
+    for fire in events.values():
         if fire.end_tick <= fire.start_tick:
             fire.end_tick = fire.start_tick + get_weight("fire_impact.default_duration", 6.0)
             fire.low_confidence = True
     return list(events.values())
+
+
+def _attribute_by_projectile_position(events: dict[Any, FireEvent], round_context: RoundContext) -> None:
+    """Attribute fire events by matching molotov/incendiary projectile positions to inferno start."""
+    # Gather molotov/incendiary projectiles with positions and times
+    fire_projectiles: list[dict[str, Any]] = []
+    for tick in sorted(round_context.ticks, key=lambda item: item.round_seconds):
+        for projectile in tick.projectiles:
+            ptype = str(projectile.get("type", "")).lower()
+            if "molotov" in ptype or "incendiary" in ptype:
+                position = coerce_position(projectile.get("position"))
+                if position is not None:
+                    fire_projectiles.append({
+                        "position": position,
+                        "time": tick.round_seconds,
+                        "name": projectile.get("name") or "unknown",
+                    })
+
+    for fire in events.values():
+        if fire.thrower != "unknown":
+            continue
+        for fp in fire_projectiles:
+            time_diff = abs(fp["time"] - fire.start_tick)
+            dist = calculate_distance_2d(fp["position"][0], fp["position"][1], fire.position[0], fire.position[1])
+            if time_diff <= 1.5 and dist <= 350.0:
+                fire.thrower = fp["name"]
+                fire.attribution_method = "projectile_position_time"
+                break
+
+
+def _attribute_and_generate_from_damage(events: dict[Any, FireEvent], round_context: RoundContext) -> None:
+    """Enhance existing fire events or generate low-confidence ones from damage."""
+    # Collect fire damage from events and future_damage
+    fire_damages: list[dict[str, Any]] = []
+    for event in round_context.events:
+        if event.event_type == EventType.DAMAGE and is_fire_weapon(event.weapon):
+            fire_damages.append({
+                "tick": event.tick,
+                "attacker": event.player,
+                "victim": event.other_player,
+                "position": player_position_at(round_context, event.other_player, event.tick),
+            })
+    for tick in round_context.ticks:
+        for dmg in tick.future_damage:
+            if is_fire_weapon(dmg.get("weapon", "")):
+                dmg_time = safe_float(dmg.get("time"), tick.round_seconds)
+                attacker = dmg.get("attacker_name") or dmg.get("attacker") or "unknown"
+                victim = dmg.get("victim_name") or dmg.get("user_name") or dmg.get("player")
+                fire_damages.append({
+                    "tick": dmg_time,
+                    "attacker": attacker,
+                    "victim": victim,
+                    "position": player_position_at(round_context, victim, dmg_time),
+                })
+
+    for fd in fire_damages:
+        # Try to enhance nearby existing fire event
+        enhanced = False
+        for fire in events.values():
+            if fire.thrower == "unknown" and fd.get("attacker") and fd["attacker"] != "unknown":
+                time_diff = abs(fd["tick"] - fire.start_tick)
+                if time_diff <= get_weight("fire_impact.damage_window_seconds", 6.0):
+                    fire.thrower = fd["attacker"]
+                    fire.attribution_method = "damage_attacker"
+                    enhanced = True
+                    break
+            elif fire.thrower != "unknown" and fd.get("attacker") == fire.thrower:
+                time_diff = abs(fd["tick"] - fire.start_tick)
+                if time_diff <= get_weight("fire_impact.damage_window_seconds", 6.0):
+                    enhanced = True
+                    break
+        # If no inferno event exists, generate low-confidence FireEvent
+        if not enhanced and fd.get("attacker") and fd["attacker"] != "unknown":
+            entityid = f"fire-damage-{fd['attacker']}-{fd['tick']}"
+            if entityid not in events:
+                pos = fd.get("position")
+                if pos is None:
+                    pos = (0.0, 0.0, 0.0)
+                events[entityid] = FireEvent(
+                    entityid=entityid,
+                    start_tick=fd["tick"],
+                    end_tick=fd["tick"] + get_weight("fire_impact.default_duration", 6.0),
+                    position=pos,
+                    thrower=fd["attacker"],
+                    fire_type="inferno",
+                    low_confidence=True,
+                    attribution_method="damage_attacker",
+                )
 
 
 def infer_fire_throwers(round_context: RoundContext) -> dict[Any, str]:

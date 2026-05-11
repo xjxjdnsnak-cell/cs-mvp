@@ -9,6 +9,8 @@ from demo_analysis.high_level_analysis import build_dashboard_payload
 
 from .engine import ImpactEngine
 from .report import generate_match_report, report_to_json
+from .utility_diagnostics import collect_match_diagnostics, format_utility_diagnostics
+from .align import build_round_context
 
 
 def main():
@@ -45,6 +47,11 @@ def main():
         "--verbose", "-v",
         action="store_true",
         help="详细输出模式"
+    )
+    parser.add_argument(
+        "--utility-debug",
+        action="store_true",
+        help="输出 utility diagnostics 信息"
     )
 
     args = parser.parse_args()
@@ -99,6 +106,16 @@ def main():
             f.write(md_output)
         if not args.quiet:
             print(f"Markdown 报告已保存: {md_path}")
+
+    if args.utility_debug:
+        from .models import RoundContext
+        team1_players = report.match_info.get("team1_players", [])
+        team2_players = report.match_info.get("team2_players", [])
+        round_contexts: list[RoundContext] = []
+        for round_data in engine.rounds:
+            round_contexts.append(build_round_context(round_data, team1_players, team2_players))
+        diagnostics = collect_match_diagnostics(round_contexts)
+        print("\n" + format_utility_diagnostics(diagnostics))
 
     if not args.quiet:
         print("\n" + "=" * 50)
