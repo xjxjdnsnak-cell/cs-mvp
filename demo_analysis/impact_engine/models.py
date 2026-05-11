@@ -33,8 +33,12 @@ class PredictionTick:
     players_info: list[dict[str, Any]]
     is_bomb_planted: bool = False
     bomb_planted_time: float | None = None
+    # Utility scoring / raw tick context
+    projectiles: list[dict[str, Any]] = field(default_factory=list)
+    entity_grenades: list[dict[str, Any]] = field(default_factory=list)
     future_kills: list[dict[str, Any]] = field(default_factory=list)
     future_damage: list[dict[str, Any]] = field(default_factory=list)
+    bomb_position: Any = None
 
     def get_player_side_win_rate(
         self, 
@@ -113,6 +117,69 @@ class EventImpact:
 
 
 @dataclass
+class FlashImpact:
+    """Impact score for a single attributed flashbang."""
+    thrower: str
+    round_id: int
+    tick: float
+    score: float
+    labels: list[str]
+    affected_enemies: list[dict[str, Any]]
+    affected_teammates: list[dict[str, Any]]
+    converted_kills: list[dict[str, Any]]
+    reasons: list[str]
+
+
+@dataclass
+class SmokeImpact:
+    """Impact score for a single attributed smoke grenade."""
+    thrower: str
+    round_id: int
+    tick: float
+    intent: str
+    score: float
+    labels: list[str]
+    reasons: list[str]
+    target_matched: bool
+    block_score: float
+    leak_risk: str
+    conversion_score: float
+    teammate_dependency: float
+    enemy_exploitation: float
+
+
+@dataclass
+class FireImpact:
+    """Impact score for a single attributed fire grenade."""
+    thrower: str
+    round_id: int
+    tick: float
+    fire_type: str
+    intent: str
+    score: float
+    labels: list[str]
+    damage_events: list[dict[str, Any]]
+    forced_movements: list[dict[str, Any]]
+    conversions: list[dict[str, Any]]
+    reasons: list[str]
+
+
+@dataclass
+class HEImpact:
+    """Impact score for a single attributed HE grenade."""
+    thrower: str
+    round_id: int
+    tick: float
+    score: float
+    labels: list[str]
+    damage_events: list[dict[str, Any]]
+    kill_events: list[dict[str, Any]]
+    smoke_context: dict[str, Any] | None
+    objective_context: dict[str, Any] | None
+    reasons: list[str]
+
+
+@dataclass
 class RiskAssessment:
     """Assessment of death risk for a player."""
     risk_type: RiskType
@@ -148,6 +215,14 @@ class PlayerRoundImpact:
     objective_impact: float = 0.0
     clutch_impact: float = 0.0
     utility_impact: float = 0.0
+    flash_impact: float = 0.0
+    flash_events: list[FlashImpact] = field(default_factory=list)
+    smoke_impact: float = 0.0
+    smoke_events: list[SmokeImpact] = field(default_factory=list)
+    fire_impact: float = 0.0
+    fire_events: list[FireImpact] = field(default_factory=list)
+    he_impact: float = 0.0
+    he_events: list[HEImpact] = field(default_factory=list)
 
     round_total_impact: float = 0.0
     round_label: str = "Neutral Round"
@@ -200,14 +275,51 @@ class PlayerMatchImpact:
     post_plant_throw_deaths: int = 0
     bomb_carrier_died_alone: int = 0
 
+    effective_flashes: int = 0
+    converted_flashes: int = 0
+    forced_turn_kills: int = 0
+    severe_team_flashes: int = 0
+    harmless_team_flashes: int = 0
+    team_flash_with_conversions: int = 0
+    flash_score: float = 0.0
+
+    smoke_score: float = 0.0
+    successful_fake_smokes: int = 0
+    fatal_leaky_smokes: int = 0
+    blocking_teammate_smokes: int = 0
+    converted_execute_smokes: int = 0
+
+    fire_score: float = 0.0
+    anti_rush_fires: int = 0
+    post_plant_fires: int = 0
+    anti_defuse_fires: int = 0
+    forced_position_fires: int = 0
+    kill_fires: int = 0
+    harmful_fires: int = 0
+    forced_smoke_extinguishes: int = 0
+
+    he_score: float = 0.0
+    he_damage_total: int = 0
+    he_kills: int = 0
+    anti_smoke_he_kills: int = 0
+    anti_smoke_route_hes: int = 0
+    anti_defuse_hes: int = 0
+    anti_plant_hes: int = 0
+    anti_rush_hes: int = 0
+    nade_stack_hits: int = 0
+    low_value_hes: int = 0
+    harmful_hes: int = 0
+
     positive_kill_events: list[dict[str, Any]] = field(default_factory=list)
     negative_death_events: list[dict[str, Any]] = field(default_factory=list)
-
-    kda: tuple[int, int, int] = (0, 0, 0)
-    rating: float = 0.0
-    rating_0_100: float = 0.0
-
-    confidence: str = "high"
+    positive_flash_events: list[dict[str, Any]] = field(default_factory=list)
+    negative_flash_events: list[dict[str, Any]] = field(default_factory=list)
+    positive_smoke_events: list[dict[str, Any]] = field(default_factory=list)
+    negative_smoke_events: list[dict[str, Any]] = field(default_factory=list)
+    positive_fire_events: list[dict[str, Any]] = field(default_factory=list)
+    negative_fire_events: list[dict[str, Any]] = field(default_factory=list)
+    positive_he_events: list[dict[str, Any]] = field(default_factory=list)
+    negative_he_events: list[dict[str, Any]] = field(default_factory=list)
 
     # Diagnostic fields for score calibration visibility
     avg_round_impact: float = 0.0
@@ -218,6 +330,12 @@ class PlayerMatchImpact:
     rule_quality_score_clipped: float = 0.0
     kill_impact_total: float = 0.0
     death_impact_total: float = 0.0
+
+    kda: tuple[int, int, int] = (0, 0, 0)
+    rating: float = 0.0
+    rating_0_100: float = 0.0
+
+    confidence: str = "high"
 
 
 @dataclass
@@ -249,3 +367,4 @@ class RoundContext:
     bomb_defused_time: float | None = None
     team1_alive_count: int = 5
     team2_alive_count: int = 5
+    map_name: str = "Unknown"

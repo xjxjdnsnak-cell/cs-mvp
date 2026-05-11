@@ -68,8 +68,13 @@ def build_prediction_tick(tick_data: dict[str, Any]) -> PredictionTick:
         players_info=tick_data.get("players_info") or [],
         is_bomb_planted=bool(tick_data.get("is_bomb_planted", False)),
         bomb_planted_time=safe_float(tick_data.get("bomb_planted_time")),
+
+        # Utility / raw event context
+        projectiles=tick_data.get("projectiles") or [],
+        entity_grenades=tick_data.get("entity_grenades") or [],
         future_kills=tick_data.get("future_kills") or [],
         future_damage=tick_data.get("future_damage") or [],
+        bomb_position=tick_data.get("bomb_position"),
     )
 
 
@@ -77,8 +82,14 @@ def _normalize_weapon_name(weapon: str | None) -> str | None:
     """Normalize weapon name for consistent matching."""
     if not weapon:
         return None
-    w = str(weapon).strip().lower().replace("weapon_", "").replace(" ", "").replace("_", "")
-    return w
+    return (
+        str(weapon)
+        .strip()
+        .lower()
+        .replace("weapon_", "")
+        .replace(" ", "")
+        .replace("_", "")
+    )
 
 
 def is_he_weapon(value: str | None) -> bool:
@@ -86,27 +97,36 @@ def is_he_weapon(value: str | None) -> bool:
     w = _normalize_weapon_name(value)
     if not w:
         return False
-    he_names = {"he", "hegrenade", "hegrenade", "highexplosivegrenade"}
+
+    he_names = {
+        "he",
+        "hegrenade",
+        "highexplosivegrenade",
+    }
+
     if w in he_names:
         return True
-    # Explicit exclusions to avoid false positives
-    exclusions = {"flash", "flashbang", "smoke", "smokegrenade", "molotov",
-                  "incendiary", "incgrenade", "inferno", "fire", "decoy", "decoygrenade"}
+
     return False
 
 
 def is_fire_weapon(value: str | None) -> bool:
-    """Check if a weapon value is a fire weapon (molotov/incendiary)."""
+    """Check if a weapon value is a fire weapon."""
     w = _normalize_weapon_name(value)
     if not w:
         return False
-    fire_names = {"molotov", "incendiary", "incgrenade", "weapon_molotov",
-                  "weapon_incgrenade", "inferno", "firebomb"}
+
+    fire_names = {
+        "molotov",
+        "incendiary",
+        "incgrenade",
+        "inferno",
+        "firebomb",
+    }
+
     if w in fire_names:
         return True
-    # Explicit exclusions
-    exclusions = {"smoke", "smokegrenade", "flash", "flashbang", "he", "hegrenade",
-                  "decoy", "decoygrenade"}
+
     return False
 
 
@@ -114,7 +134,7 @@ def extract_damage_events(
     round_data: dict[str, Any],
     team1_players: list[str],
     team2_players: list[str],
-    team1_on_ct: bool = True
+    team1_on_ct: bool = True,
 ) -> list[GameEvent]:
     """Extract damage events from round data ticks' future_damage."""
     events = []
@@ -123,40 +143,54 @@ def extract_damage_events(
 
     for tick in ticks:
         future_damage = tick.get("future_damage") or []
+
         for dmg in future_damage:
-            # Extract attacker with multiple field name compatibility
-            attacker = (dmg.get("attacker_name") or dmg.get("attacker")
-                        or dmg.get("player") or "")
-            # Extract victim with multiple field name compatibility
-            victim = (dmg.get("victim_name") or dmg.get("victim")
-                      or dmg.get("user_name") or dmg.get("other_player") or "")
-            # Extract time
-            tick_time = (safe_float(dmg.get("time")) or safe_float(dmg.get("tick"))
-                         or safe_float(dmg.get("round_seconds")))
-            # Extract weapon
+            attacker = (
+                dmg.get("attacker_name")
+                or dmg.get("attacker")
+                or dmg.get("player")
+                or ""
+            )
+            victim = (
+                dmg.get("victim_name")
+                or dmg.get("victim")
+                or dmg.get("user_name")
+                or dmg.get("other_player")
+                or ""
+            )
+
+            tick_time = (
+                safe_float(dmg.get("time"))
+                or safe_float(dmg.get("tick"))
+                or safe_float(dmg.get("round_seconds"))
+            )
+
             weapon = dmg.get("weapon")
-            # Extract damage amount
-            damage = (safe_int(dmg.get("dmg_health")) or safe_int(dmg.get("damage_health"))
-                      or safe_int(dmg.get("damage")))
+
+            damage = (
+                safe_int(dmg.get("dmg_health"))
+                or safe_int(dmg.get("damage_health"))
+                or safe_int(dmg.get("damage"))
+            )
 
             if not attacker or not victim:
                 continue
 
-            # Deduplicate by a simple key
             dedup_key = f"{attacker}-{victim}-{weapon}-{tick_time}-{damage}"
             if dedup_key in seen_keys:
                 continue
             seen_keys.add(dedup_key)
 
-            event = GameEvent(
-                event_type=EventType.DAMAGE,
-                tick=tick_time,
-                player=attacker,
-                other_player=victim,
-                weapon=weapon,
-                damage_health=damage,
+            events.append(
+                GameEvent(
+                    event_type=EventType.DAMAGE,
+                    tick=tick_time,
+                    player=attacker,
+                    other_player=victim,
+                    weapon=weapon,
+                    damage_health=damage,
+                )
             )
-            events.append(event)
 
     return events
 
@@ -165,14 +199,13 @@ def extract_future_kill_events(
     round_data: dict[str, Any],
     team1_players: list[str],
     team2_players: list[str],
-    team1_on_ct: bool = True
+    team1_on_ct: bool = True,
 ) -> list[GameEvent]:
     """Extract future kill events from ticks' future_kills as low-confidence kills."""
     events = []
     seen_killers_victims: set[tuple[str, str]] = set()
     ticks = round_data.get("ticks", [])
 
-    # Collect existing real kills to avoid duplication
     real_kills = round_data.get("kills", [])
     for k in real_kills:
         killer = k.get("killer", "")
@@ -182,15 +215,34 @@ def extract_future_kill_events(
 
     for tick in ticks:
         future_kills = tick.get("future_kills") or []
+
         for fk in future_kills:
-            killer = fk.get("killer") or fk.get("attacker") or fk.get("player") or ""
-            victim = fk.get("victim") or fk.get("target") or ""
-            tick_time = (safe_float(fk.get("time")) or safe_float(fk.get("tick"))
-                         or safe_float(fk.get("round_seconds")))
+            killer = (
+                fk.get("killer")
+                or fk.get("attacker")
+                or fk.get("attacker_name")
+                or fk.get("player")
+                or ""
+            )
+            victim = (
+                fk.get("victim")
+                or fk.get("victim_name")
+                or fk.get("user_name")
+                or fk.get("target")
+                or ""
+            )
+
+            tick_time = (
+                safe_float(fk.get("time"))
+                or safe_float(fk.get("tick"))
+                or safe_float(fk.get("round_seconds"))
+            )
+
             weapon = fk.get("weapon")
 
             if not killer or not victim:
                 continue
+
             if (killer, victim) in seen_killers_victims:
                 continue
 
@@ -200,15 +252,16 @@ def extract_future_kill_events(
             else:
                 attacker_team = "T" if killer_is_team1 else "CT"
 
-            event = GameEvent(
-                event_type=EventType.KILL,
-                tick=tick_time,
-                player=killer,
-                other_player=victim,
-                weapon=weapon,
-                team_num=attacker_team,
+            events.append(
+                GameEvent(
+                    event_type=EventType.KILL,
+                    tick=tick_time,
+                    player=killer,
+                    other_player=victim,
+                    weapon=weapon,
+                    team_num=attacker_team,
+                )
             )
-            events.append(event)
 
     return events
 
@@ -352,6 +405,7 @@ def build_round_context(
         bomb_defused_time=bomb_defused_time,
         team1_alive_count=team1_alive,
         team2_alive_count=team2_alive,
+        map_name=round_data.get("map_name", "Unknown"),
     )
 
 
