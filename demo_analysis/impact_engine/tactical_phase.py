@@ -18,6 +18,9 @@ _EXIT_ALIVE_DIFF_THRESHOLD = 3
 _EARLY_DEFAULT_SECONDS = 15
 _RETAKE_CT_MIN = 2
 _SITE_EXECUTE_T_MIN = 3
+_SITE_EXECUTE_AREAS = {"a_site", "b_site", "a_ramp", "palace", "b_apps", "ramp"}
+_TRADE_WINDOW_SECONDS = 5.0
+_BOMB_PLANT_APPROACH_WINDOW = 10.0
 
 
 def get_alive_counts(round_context: RoundContext, tick_index: int) -> tuple[int, int]:
@@ -199,6 +202,75 @@ def is_ct_moving_to_site(round_context: RoundContext, tick_index: int) -> bool:
     return ct_moving_count >= _RETAKE_CT_MIN
 
 
+def _count_t_in_site_execute_areas(round_context: RoundContext, tick_index: int) -> int:
+    if tick_index < 0 or tick_index >= len(round_context.ticks):
+        return 0
+    tick = round_context.ticks[tick_index]
+    count = 0
+    for player in tick.players_info:
+        if not player.get("is_alive", True):
+            continue
+        name = player.get("name")
+        if not _is_t_player(round_context, name):
+            continue
+        if locate_player_area is not None:
+            try:
+                area_info = locate_player_area(player, round_context.map_name)
+                if area_info is not None and area_info.name in _SITE_EXECUTE_AREAS:
+                    count += 1
+            except Exception:
+                pass
+    return count
+
+
+def _has_traded_death_in_site_areas(round_context: RoundContext, tick_index: int) -> bool:
+    if tick_index < 0 or tick_index >= len(round_context.ticks):
+        return False
+    tick = round_context.ticks[tick_index]
+    tick_time = tick.round_seconds
+    from .models import EventType
+    for event in round_context.events:
+        if event.event_type != EventType.DEATH:
+            continue
+        if abs(event.tick - tick_time) > 2.0:
+            continue
+        death_tick_idx = tick_index
+        if death_tick_idx < 0 or death_tick_idx >= len(round_context.ticks):
+            continue
+        death_tick = round_context.ticks[death_tick_idx]
+        for p in death_tick.players_info:
+            if p.get("name") == event.player:
+                if locate_area is not None:
+                    try:
+                        area = locate_area(round_context.map_name, p.get("X", 0.0), p.get("Y", 0.0))
+                        if area is not None and area.name in _SITE_EXECUTE_AREAS:
+                            teammates = (
+                                round_context.team2_players if round_context.team1_on_ct else round_context.team1_players
+                            )
+                            for kill_event in round_context.events:
+                                if kill_event.event_type == EventType.KILL and kill_event.player in teammates:
+                                    if 0 < kill_event.tick - event.tick <= _TRADE_WINDOW_SECONDS:
+                                        return True
+                    except Exception:
+                        pass
+                break
+    return False
+
+
+def _has_multiple_t_engaging_near_site(round_context: RoundContext, tick_index: int) -> bool:
+    if tick_index < 0 or tick_index >= len(round_context.ticks):
+        return False
+    a_count = count_t_near_site(round_context, tick_index, "a_site")
+    b_count = count_t_near_site(round_context, tick_index, "b_site")
+    if a_count >= 2 or b_count >= 2:
+        tick = round_context.ticks[tick_index]
+        for event in round_context.events:
+            if event.event_type == EventType.KILL or event.event_type == EventType.DEATH:
+                if abs(event.tick - tick.round_seconds) <= 3.0:
+                    return True
+    return False
+
+
 def detect_round_phase(round_context: RoundContext, tick_index: int) -> str:
     if tick_index < 0 or tick_index >= len(round_context.ticks):
         return "map_control"
@@ -215,12 +287,23 @@ def detect_round_phase(round_context: RoundContext, tick_index: int) -> str:
             return "exit_phase"
         if is_ct_moving_to_site(round_context, tick_index):
             return "retake"
+        # If within approach window BEFORE bomb plant, it's still site_execute phase
+        # But AFTER bomb plant, it should be post_plant unless other site_execute conditions met
+        if tick.round_seconds < round_context.bomb_planted_time and round_context.bomb_planted_time - tick.round_seconds <= _BOMB_PLANT_APPROACH_WINDOW:
+            return "site_execute"
         return "post_plant"
     a_count = count_t_near_site(round_context, tick_index, "a_site")
     b_count = count_t_near_site(round_context, tick_index, "b_site")
     if a_count >= _SITE_EXECUTE_T_MIN and has_utility_near_site(round_context, tick_index, "a_site"):
         return "site_execute"
     if b_count >= _SITE_EXECUTE_T_MIN and has_utility_near_site(round_context, tick_index, "b_site"):
+        return "site_execute"
+    t_in_execute_areas = _count_t_in_site_execute_areas(round_context, tick_index)
+    if t_in_execute_areas >= 2:
+        return "site_execute"
+    if _has_traded_death_in_site_areas(round_context, tick_index):
+        return "site_execute"
+    if _has_multiple_t_engaging_near_site(round_context, tick_index):
         return "site_execute"
     if tick.round_seconds > _SAVE_ROUND_SECONDS:
         if t_alive <= _SAVE_ALIVE_THRESHOLD and ct_alive >= 3:

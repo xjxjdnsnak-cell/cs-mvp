@@ -340,7 +340,22 @@ def calculate_player_round_impact(
     fire_impact_total, fire_events = calculate_player_fire_impact(player_name, round_context)
     he_impact_total, he_events = calculate_player_he_impact(player_name, round_context)
     map_control_impact, tactical_discipline_impact, tactical_events = calculate_player_tactical_impact(player_name, round_context)
-    tactical_event_dicts = [{"player": e.player, "round_id": e.round_id, "tick": e.tick, "label": e.label, "score": e.score, "reason": e.reason, "area": e.area, "area_cn": e.area_cn, "phase": e.phase} for e in tactical_events]
+    tactical_event_dicts = [
+        {
+            "player": player_name,
+            "round_id": e.get("round"),
+            "tick": e.get("start_tick"),
+            "end_tick": e.get("end_tick"),
+            "label": e.get("label"),
+            "score": e.get("impact"),
+            "reason": e.get("reason"),
+            "area": e.get("area"),
+            "area_cn": e.get("area_cn"),
+            "phase": e.get("phase"),
+            "duration": e.get("duration"),
+        }
+        for e in tactical_events
+    ]
     utility_impact_total = flash_impact_total + smoke_impact_total + fire_impact_total + he_impact_total
 
     round_total = (
@@ -651,13 +666,15 @@ def calculate_player_match_impact(
         for ev in ri.tactical_events:
             event_data = {
                 "round": ev.get("round_id", ri.round_id),
-                "tick": ev.get("tick"),
+                "start_tick": ev.get("tick"),
+                "end_tick": ev.get("end_tick"),
                 "phase": ev.get("phase", ""),
                 "area": ev.get("area"),
                 "area_cn": ev.get("area_cn"),
                 "label": ev.get("label", ""),
                 "impact": ev.get("score", 0.0),
                 "reason": ev.get("reason", ""),
+                "duration": ev.get("duration"),
             }
             if ev.get("score", 0.0) > 0:
                 positive_tactical_events.append(event_data)

@@ -386,20 +386,78 @@ def evaluate_save_and_exit(player: str, round_context: RoundContext) -> list[Tac
     return events
 
 
-def calculate_player_tactical_impact(player: str, round_context: RoundContext) -> tuple[float, float, list[TacticalEvent]]:
+def aggregate_tactical_events(events: list[TacticalEvent]) -> list[dict[str, Any]]:
+    """Aggregate tactical events by player, round, label, area with <2s gap."""
+    if not events:
+        return []
+
+    sorted_events = sorted(events, key=lambda e: (e.player, e.round_id, e.label, e.area or "", e.tick))
+    groups: list[list[TacticalEvent]] = []
+    current_group: list[TacticalEvent] = []
+
+    for ev in sorted_events:
+        if not current_group:
+            current_group.append(ev)
+            continue
+        last = current_group[-1]
+        if (
+            ev.player == last.player
+            and ev.round_id == last.round_id
+            and ev.label == last.label
+            and (ev.area or "") == (last.area or "")
+            and ev.tick - last.tick <= 2.0
+        ):
+            current_group.append(ev)
+        else:
+            groups.append(current_group)
+            current_group = [ev]
+    if current_group:
+        groups.append(current_group)
+
+    aggregated: list[dict[str, Any]] = []
+    for group in groups:
+        first = group[0]
+        last = group[-1]
+        raw_sum = sum(ev.score for ev in group)
+        if raw_sum > 0:
+            impact = min(0.5, max(raw_sum, first.score))
+        else:
+            impact = max(-0.5, min(raw_sum, first.score))
+        duration = last.tick - first.tick
+        aggregated.append({
+            "round": first.round_id,
+            "start_tick": first.tick,
+            "end_tick": last.tick,
+            "phase": first.phase,
+            "area": first.area,
+            "area_cn": first.area_cn,
+            "label": first.label,
+            "impact": impact,
+            "reason": first.reason,
+            "duration": duration,
+        })
+    return aggregated
+
+
+def calculate_player_tactical_impact(player: str, round_context: RoundContext) -> tuple[float, float, list[dict[str, Any]]]:
     all_events: list[TacticalEvent] = []
     all_events.extend(evaluate_mid_control(player, round_context))
     all_events.extend(evaluate_site_execute(player, round_context))
     all_events.extend(evaluate_post_plant_discipline(player, round_context))
     all_events.extend(evaluate_retake_discipline(player, round_context))
     all_events.extend(evaluate_save_and_exit(player, round_context))
+
+    aggregated = aggregate_tactical_events(all_events)
+
     map_control = 0.0
     tactical_discipline = 0.0
-    for ev in all_events:
-        if ev.label in ("mid_control_success", "mid_control_lost", "key_area_control", "key_area_isolated_death"):
-            map_control += ev.score
+    for ev in aggregated:
+        label = ev["label"]
+        impact = ev["impact"]
+        if label in ("mid_control_success", "mid_control_lost", "key_area_control", "key_area_isolated_death"):
+            map_control += impact
         else:
-            tactical_discipline += ev.score
+            tactical_discipline += impact
     map_control = max(-0.5, min(0.5, map_control))
     tactical_discipline = max(-1.0, min(1.0, tactical_discipline))
-    return map_control, tactical_discipline, all_events
+    return map_control, tactical_discipline, aggregated
