@@ -529,22 +529,12 @@ def calculate_player_match_impact(
     total_score = model_impact_score * model_weight + rule_quality_score * rule_weight
 
     rating = total_score
-    # 使用按回合数归一化的方法
     total_round_impact = sum(ri.round_total_impact for ri in round_impacts)
     avg_round_impact = total_round_impact / round_count
     kill_impact_total = sum(ri.kill_impact for ri in round_impacts)
     death_impact_total = sum(ri.death_impact for ri in round_impacts)
 
-    # 基础 50 分，加上平均回合影响放大
-    rating_0_100 = 50 + avg_round_impact * 10
-    
-    # 加上高影响回合和送人头回合的修正
-    rating_0_100 += high_impact_rounds * 3
-    rating_0_100 -= throw_rounds * 3
-    rating_0_100 -= self_created_risk_deaths * 1
-    
-    # 限制在 0-100 之间
-    rating_0_100 = max(0.0, min(100.0, rating_0_100))
+    rating_0_100 = 50.0
 
     kills_total = sum(len(ri.kills) for ri in round_impacts)
     deaths_total = sum(len(ri.deaths) for ri in round_impacts)

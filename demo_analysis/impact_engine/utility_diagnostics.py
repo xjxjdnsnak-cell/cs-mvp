@@ -141,8 +141,6 @@ def add_score_extreme_diagnostics(
         1 for player in players
         if player.model_impact_score_raw > 50 and player.model_impact_score_clipped >= 50
     )
-    updated["rating_zero_count"] = sum(1 for player in players if player.rating_0_100 <= 0)
-    updated["rating_hundred_count"] = sum(1 for player in players if player.rating_0_100 >= 100)
     return updated
 
 

@@ -110,11 +110,12 @@ class TestRatingNormalization(unittest.TestCase):
         self.assertIn("avg_round_impact", player.rating_components)
         self.assertIn("high_impact_bonus", player.rating_components)
         self.assertIn("throw_penalty", player.rating_components)
-        self.assertIn("self_created_risk_penalty", player.rating_components)
+        self.assertIn("self_created_penalty", player.rating_components)
         self.assertIn("trade_bonus", player.rating_components)
         self.assertIn("utility_bonus", player.rating_components)
         self.assertIn("tactical_bonus", player.rating_components)
-        self.assertIn("final_rating", player.rating_components)
+        self.assertIn("final_rating_before_clamp", player.rating_components)
+        self.assertIn("rating_0_100", player.rating_components)
 
     def test_z_score_calculation(self):
         """z_score 应正确计算"""
@@ -181,10 +182,12 @@ class TestRatingNormalization(unittest.TestCase):
         self.assertEqual(stats["rating_clamped_high_count"], 0)
 
     def test_empty_player_list(self):
-        """空玩家列表不应报错"""
+        """空玩家列表应返回空的统计字典"""
         players = []
         result = normalize_player_ratings(players)
-        self.assertIsNone(result)
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["rating_zero_count"], 0)
+        self.assertEqual(result["rating_hundred_count"], 0)
 
     def test_utility_bonus_clamped(self):
         """utility_bonus 应在 [-2.1, 2.1] 范围内"""
