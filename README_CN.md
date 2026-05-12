@@ -5,7 +5,7 @@
 <h1 align="center">CS-NET</h1>
 
 <p align="center">
-  <strong>面向 Counter-Strike 比赛数据分析的深度学习框架</strong>
+  <strong>Counter-Strike 2 比赛分析框架</strong>
 </p>
 
 <p align="center">
@@ -20,38 +20,94 @@
 
 ## 快速导航
 
-- [项目概览](#项目概览)
-- [预测任务](#预测任务)
-- [快速开始](#快速开始)
-- [Web App 使用方法](#web-app-使用方法)
-- [Web App 功能](#web-app-功能)
-- [致谢](#致谢)
-- [星标历史](#星标历史)
-- [贡献者](#贡献者)
+- [项目概览](#-项目概览)
+- [核心组件](#-核心组件)
+- [预测任务](#-预测任务)
+- [Impact Engine](#-impact-engine)
+- [快速开始](#-快速开始)
+- [Web 应用](#-web-应用)
+- [项目结构](#-项目结构)
+- [贡献指南](#-贡献指南)
+- [致谢](#-致谢)
 
 ---
 
-## 项目概览
+## 📌 项目概览
 
-CS-NET 是一个基于 **Transformer** 的深度学习框架，用于分析 Counter-Strike 2 的比赛回放（`.dem` demo 文件）。它会解析比赛录像，把游戏状态转换成 token 序列，再交给预训练的 Transformer 模型做多种实时预测。
+CS-NET 是一个综合性的 **Counter-Strike 2 比赛分析框架**，结合了深度学习预测和规则式战术分析。它解析 demo 文件，提取游戏状态，并通过多个组件提供可操作的洞察。
 
-一句话概括：**给模型一段比赛回放，它能告诉你接下来谁会赢、谁会死，以及谁最可能拿到下一次击杀。**
+### 核心能力
 
-## 预测任务
+1. **深度学习预测**：基于 Transformer 的模型进行胜率、存活率和击杀预测
+2. **影响力分析**：评估玩家对回合结果的贡献
+3. **战术分析**：地图特定的战术评分和事件检测
+4. **交互式可视化**：基于 Web 的 demo 查看器和实时预测展示
+
+---
+
+## 🧩 核心组件
+
+### 1. CS-NET 模型
+
+基于 Transformer 的深度学习模型，同时处理游戏状态序列来预测多个结果。
+
+### 2. Impact Engine
+
+高级玩家影响力分析系统，结合模型预测和规则评分来评估每个玩家在回合中的真实贡献。
+
+### 3. 地图知识库
+
+战术分析的地图特定配置，包括区域、路线、枪线和道具目标。
+
+### 4. Web 应用
+
+交互式 demo 分析工具，包含 2D 雷达可视化、时间线分析和 LLM 驱动的比赛总结。
+
+---
+
+## 🎯 预测任务
 
 | 任务 | 说明 | 输出 |
 |------|------|------|
-| **胜率预测** | 当前回合 team1（按攻防映射）赢下本局的概率 | 0 到 1 之间的标量 |
-| **存活预测** | 每个玩家在接下来 5 秒内仍然存活的概率 | 10 个玩家分别对应一个概率 |
-| **下一次击杀预测** | 谁最可能拿到下一次击杀 | 10+1 类的概率分布 |
-| **下一次阵亡预测** | 谁最可能成为下一次阵亡者 | 10+1 类的概率分布 |
-| **决斗预测** | 任意 CT-T 玩家对之间的 1v1 胜率 | 5x5 概率矩阵 |
+| **胜率预测** | 当前队伍赢下回合的概率 | 标量 [0, 1] |
+| **存活预测** | 每个玩家未来 5 秒内存活概率 | 10 个概率值 |
+| **下一击杀预测** | 谁最可能获得下一次击杀 | 11 类概率分布 |
+| **下一阵亡预测** | 谁最可能成为下一个阵亡者 | 11 类概率分布 |
+| **决斗预测** | 任意 CT-T 玩家对的 1v1 胜率 | 5×5 概率矩阵 |
 
-## 快速开始
+---
+
+## ⚡ Impact Engine
+
+Impact Engine 通过结合模型预测和战术洞察提供全面的玩家表现分析。
+
+### 核心功能
+
+- **RWI（回合胜率影响）**：衡量每个行为对队伍胜率的影响
+- **战术评分**：地图特定的战术事件检测（中路控制、进点执行、回防等）
+- **道具分析**：烟雾/闪光/燃烧弹/手雷的有效性评估
+- **纪律追踪**：下包后站位和回防纪律
+
+### 检测的战术事件
+
+| 类别 | 事件 |
+|------|------|
+| **地图控制** | `mid_control_success`, `mid_control_hold`, `key_area_isolated_death` |
+| **进点执行** | `valid_entry_sacrifice`, `failed_entry_no_trade` |
+| **下包后** | `post_plant_crossfire_hold`, `post_plant_discipline_error` |
+| **回防** | `retake_grouped`, `retake_solo_feed` |
+| **残局** | `save_correct`, `save_throw`, `exit_frag_low_impact` |
+
+### 支持的地图
+
+- de_mirage（完整战术支持）
+- de_ancient, de_anubis, de_dust2, de_inferno, de_nuke, de_overpass, de_train, de_vertigo
+
+---
+
+## 🚀 快速开始
 
 ### 1. 配置环境
-
-创建 Python 环境并安装依赖：
 
 ```bash
 conda create -n cs-net python=3.10
@@ -61,159 +117,191 @@ pip install -r requirements.txt
 
 ### 2. 下载预训练模型
 
-将所有预训练模型和分词器下载到 `./cs-net-models/`：
-
-模型权重也可以在这里获取：https://huggingface.co/gary2oos/CS-Net-V3
-
 ```bash
 python -m scripts.download_model
 ```
 
-### 3. 将 Demo 转换为 JSON
+模型将下载到 `./cs-net-models/`。
 
-使用 `process_demo` 脚本把 demo 文件解析为结构化 JSON：
+### 3. 分析 Demo
 
-`examples/test.dem` 故意没有包含在仓库中，因为 demo 文件通常非常大。
-你需要自己下载一个 `.dem` 文件（例如来自 HLTV），并替换输入路径。
-
-```bash
-python -m data.process_demo \
-  -path examples/test.dem \
-  -interval 0.25 \
-  -out examples/test.json
-```
-
-### 4. 下载测试数据
-
-为了复现下面的校准 / 评估结果，先下载测试分片：
+#### 选项 A：完整流程（Demo → 分析 → 报告）
 
 ```bash
-python -m scripts.download_data
+# 步骤 1：处理 demo 提取游戏状态
+python -m demo_analysis.get_round_win_rate \
+  --demo path/to/your/demo.dem \
+  --model-root cs-net-models/ \
+  --output output/analysis.json
+
+# 步骤 2：生成影响力报告
+python -m demo_analysis.impact_engine.cli \
+  --analysis-json output/analysis.json \
+  --out output/impact_report.md \
+  --json-out output/impact_report.json
 ```
 
-这个脚本会从 Hugging Face 下载 `test/shards-00000.tar`，并保存到 `./dataset/test/`。
-
-### 5. 进行 Temperature Scaling 校准
-
-可以用下面的命令对 model3.0 的各个 head 做校准：
+#### 选项 B：使用现有分析结果快速测试
 
 ```bash
-python -m scripts.train3_t_scaling --dataset_path dataset --device cpu
+python -m demo_analysis.impact_engine.cli \
+  --analysis-json output/analysis.json \
+  --out output/report.md \
+  --json-out output/report.json
 ```
 
-在当前测试分片上的结果如下：
+### 4. 运行测试
 
-| 任务 | T | 校准前 Loss | 校准前 ECE | 校准前 Acc | 校准后 Loss | 校准后 ECE | 校准后 Acc |
-|------|---|-------------|------------|------------|------------|-----------|-----------|
-| Alive | 1.193158 | 0.431486 | 0.028640 | 0.774641 | 0.429344 | 0.021371 | 0.774641 |
-| Duel | 1.146975 | 0.633122 | 0.017835 | 0.632217 | 0.632133 | 0.014517 | 0.632217 |
-| Next Death | 1.493995 | 1.785793 | 0.077382 | 0.342485 | 1.741089 | 0.012107 | 0.342485 |
-| Next Kill | 1.602551 | 1.801647 | 0.102502 | 0.339024 | 1.736153 | 0.012922 | 0.339024 |
-| Win Rate | 1.061342 | 0.467820 | 0.029351 | 0.754566 | 0.467459 | 0.029516 | 0.754566 |
+```bash
+python -m pytest demo_analysis/impact_engine/tests -q
+```
 
-## Web App 使用方法
+---
 
-CS-NET 现在内置了一个交互式网页分析面板，可以直接上传 demo，并完成模型分析和基于 LLM 的赛后复盘。
+## 🌐 Web 应用
 
-> **署名说明**
-> 内置的 2D 查看器改编自 [`sparkoo/csgo-2d-demo-viewer`](https://github.com/sparkoo/csgo-2d-demo-viewer)。
-> 我们在上游 MIT 协议下使用该项目，并将其适配为 CS-NET 的 Flask 路由与模型预测叠加显示。
-
-### 1. 启动 Web App
+### 启动 Web 应用
 
 ```bash
 python -m demo_analysis.web_app
 ```
 
-然后打开：
+在浏览器中打开 `http://127.0.0.1:7860`。
 
-```text
-http://127.0.0.1:7860
-```
+### 功能特性
 
-### 2. 在界面中分析 demo
+- **交互式 Demo 分析**：上传和分析 .dem 文件
+- **实时 2D 雷达**：实时玩家位置和游戏状态
+- **时间线分析**：回合胜率曲线和击杀标记
+- **玩家指标**：存活概率、决斗胜率、影响力评分
+- **LLM 总结**：AI 生成的比赛分析报告
+- **双语支持**：中英文界面和报告
 
-1. 上传 .dem 文件。
-2. 选择 **模型根目录**（通常是 `cs-net-models/`）。网页会一次性从根目录下加载 `alive / nxt_kill / nxt_death / win_rate / duel` 五个预测头，不需要再分别指定各自的子目录。
-3. 选择推理设备（cpu / cuda / mps）。
-4. 点击开始分析。
+---
 
-### 3. 生成 LLM 复盘
-
-1. 填写 API Key、模型名和 Base URL（OpenAI 兼容）。
-2. 选择界面语言（中文 / English）。
-3. 点击生成 AI 复盘。
-
-## Web App 功能
-
-- 中英文双语界面与双语 LLM 输出。
-- 回合胜率曲线 + 击杀事件标记。
-- 鼠标悬停时间线即可查看该时刻的玩家贡献。
-- **实时 2D 雷达**：鼠标在胜率曲线上移动时同步刷新，在真实地图 overview 上画出每个玩家的位置、阵营颜色、存活状态以及是否刚被闪。
-- **逐 tick 指标面板**：四个预测头的输出完整展开，包括 5 秒内存活概率、下一击杀者分布、下一阵亡者分布，以及 CT vs T 的 5×5 对决胜率矩阵。
-- **高级指标面板**：跨整场比赛聚合每个玩家的平均 kill / death / survive 概率、硬仗胜率（模型原本认为他会输的 1v1）、易仗胜率（模型原本看好他的 1v1）、highlight 率，以及按 |swing| 排序的关键击杀榜。
-- **一键打开 2D 回放器**：在新标签页直接播放同一段 demo，包含烟雾 / 闪光 / 手雷弹道，并将 CS-NET 的胜率曲线叠加到 viewer 的时间线上。
-- 当前回合最终贡献表 + 全场平均贡献表。
-- MVP / SVP 标记。
-- LLM 总结支持流式输出与 Markdown 渲染。
-- 自动记住用户输入（浏览器本地存储）：API Key、模型名、Base URL、Temperature、设备、模型目录、Batch Size、语言。
-- 为 LLM 提供攻防上下文，降低幻觉：每回合攻防归属、上下半场 CT/T 归属与分半比分。
-
-## 🎯 Impact Engine 影响力评分引擎
-
-Impact Engine 在 CS-NET 模型预测的基础上，提供深度的玩家回合影响力分析。它能评估每名玩家在每一回合中的真实贡献，区分自造风险死亡与合理高风险死亡。
-
-### 核心功能
-
-- **RWI（回合胜率影响）**：衡量每个行为对队伍胜率的影响
-- **死亡风险评估**：区分自造风险与被迫高风险死亡
-- **规则标签识别**：识别首杀、补枪、残局、出口杀等行为
-- **综合评分**：结合模型影响分和规则质量分
-- **中文复盘报告**：生成详细的中文赛后分析报告
-
-### 快速开始
-
-```bash
-# 分析 demo 并生成报告
-python -m demo_analysis.impact_engine.cli \
-  --analysis-json output/analysis.json \
-  --out report.md \
-  --json-out report.json
-```
-
-### 输出内容
-
-1. **Markdown 报告** (`--out`)：详细的中文分析，包含：
-   - 每名玩家评分 (0-100)
-   - 模型影响分 / 规则质量分
-   - 高影响回合数
-   - 死亡分析（白给死亡、自造风险、合理高风险）
-   - Hard Duel Win / Easy Duel Loss 次数
-   - 关键正面/负面行为
-   - 改进建议
-
-2. **JSON 输出** (`--json-out`)：结构化数据，便于后续处理
-
-### 评分公式
+## 📁 项目结构
 
 ```
-最终评分 = 模型影响分 × 0.65 + 规则质量分 × 0.35
-
-模型影响分 = RWI总和 + Hard Duel Wins × 0.8 - Easy Duel Losses × 0.6
-规则质量分 = 补枪加分 + 残局加分 - 白给死亡扣分 - 自造风险扣分
+cs-mvp/
+├── assets/                    # 静态资源（Logo、图片）
+├── config/                    # 配置文件
+│   └── callouts/              # 地图特定配置
+├── data/                      # 数据处理脚本
+├── demo_analysis/             # Demo 分析管道
+│   ├── impact_engine/         # 影响力分析引擎
+│   │   ├── tests/             # 单元测试
+│   │   ├── cli.py             # 命令行接口
+│   │   ├── engine.py          # 核心引擎
+│   │   ├── scoring.py         # 评分计算
+│   │   ├── tactical_scoring.py # 战术事件评分
+│   │   ├── map_tactics.py     # 地图区域查询
+│   │   └── report.py          # 报告生成
+│   ├── static/                # Web 应用静态文件
+│   ├── templates/             # HTML 模板
+│   └── web_app.py            # Flask Web 服务器
+├── demoparser_utils/          # Demo 解析工具
+├── models/                    # 模型实现
+├── output/                    # 生成的报告
+├── scripts/                   # 实用脚本
+└── tests/                     # 额外测试
 ```
 
-### 配置说明
+### 关键文件
 
-所有评分权重都在 `demo_analysis/impact_engine/config.py` 中，可以直接调整参数来修改评分灵敏度。
+| 文件 | 说明 |
+|------|------|
+| [`demo_analysis/impact_engine/engine.py`](demo_analysis/impact_engine/engine.py) | 核心影响力计算引擎 |
+| [`demo_analysis/impact_engine/scoring.py`](demo_analysis/impact_engine/scoring.py) | 玩家评分逻辑 |
+| [`demo_analysis/impact_engine/tactical_scoring.py`](demo_analysis/impact_engine/tactical_scoring.py) | 战术事件检测和评分 |
+| [`demo_analysis/impact_engine/map_tactics.py`](demo_analysis/impact_engine/map_tactics.py) | 地图区域查询和工具 |
+| [`demo_analysis/impact_engine/report.py`](demo_analysis/impact_engine/report.py) | Markdown 报告生成 |
+| [`config/callouts/de_mirage.yaml`](config/callouts/de_mirage.yaml) | Mirage 地图配置 |
 
-## 致谢
+---
 
-Web App 中的 2D 回放器（`demo_analysis/static/viewer/` 下的全部文件）是对优秀开源项目 **[sparkoo/csgo-2d-demo-viewer](https://github.com/sparkoo/csgo-2d-demo-viewer)** 的轻度改造版本，作者为 **Michal Vala**，采用 MIT License 发布（© 2023 Michal Vala）。回放器的解析、渲染和交互能力都来自上游，我们只是把它的静态资源路径接到 Flask 的 `/viewer/` 路由下，并将 CS-NET 的逐 tick 预测叠加到时间线上。**这些技术成果与使用体验的核心贡献均应归功于上游作者。**
+## 📊 输出格式
 
-原始 MIT 许可证已原样保留在 [`demo_analysis/static/viewer/LICENSE`](demo_analysis/static/viewer/LICENSE)。如果你要进一步转发或再分发这部分代码，请一并保留该 LICENSE 文件与版权声明，以避免违反 MIT 协议。
+### Markdown 报告
 
-## 星标历史
+包含详细分析，包括：
+- 玩家评分（0-100 分）
+- RWI（回合胜率影响）细分
+- 地图控制表现
+- 战术事件时间线
+- 死亡分析和纪律指标
+- 道具使用有效性
+- 改进建议
+
+### JSON 输出
+
+结构化数据，便于程序化访问：
+- 每回合玩家影响力
+- 带时间戳的战术事件
+- 模型预测
+- 道具使用统计
+
+---
+
+## 🤝 贡献指南
+
+### 开发流程
+
+1. Fork 仓库
+2. 创建功能分支（`git checkout -b feature/your-feature`）
+3. 进行修改
+4. 运行测试（`python -m pytest demo_analysis/impact_engine/tests`）
+5. 提交并推送
+6. 创建 Pull Request
+
+### 代码规范
+
+- 遵循 PEP 8 代码规范
+- 使用类型提示
+- 为公共函数添加文档字符串
+- 为新功能添加单元测试
+
+---
+
+## 🙏 致谢
+
+### 原始 CS-NET 项目
+
+本项目基于并扩展了由 Gary2005 和贡献者开发的原始 **CS-NET** 框架：
+
+- **原始仓库**: [Gary2005/cs-net](https://github.com/Gary2005/cs-net)
+- **预训练模型**: [Hugging Face 仓库](https://huggingface.co/gary2oos/CS-Net-V3)
+- **原始论文**: CS-NET: A Transformer-based Framework for Counter-Strike Match Analysis (审核中)
+
+### 第三方组件
+
+- **2D Demo 查看器**：基于 [sparkoo/csgo-2d-demo-viewer](https://github.com/sparkoo/csgo-2d-demo-viewer) 的修改集成，MIT 许可证
+- **Demo 解析**：使用 Valve 的 demo 解析工具
+- **预训练模型**：托管在 Hugging Face
+
+### 引用说明
+
+如果您在研究或工作中使用本项目，请引用原始 CS-NET 工作：
+
+```bibtex
+@misc{csnet2024,
+  author = {Gary2005 and contributors},
+  title = {CS-NET: A Transformer-based Framework for Counter-Strike Match Analysis},
+  year = {2024},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/Gary2005/cs-net}},
+}
+```
+
+---
+
+## 📄 许可证
+
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
+
+---
+
+## ⭐ 星标历史
 
 <a href="https://www.star-history.com/?repos=Gary2005%2Fcs-net&type=date&legend=top-left">
  <picture>
@@ -223,8 +311,8 @@ Web App 中的 2D 回放器（`demo_analysis/static/viewer/` 下的全部文件�
  </picture>
 </a>
 
-## 贡献者
+---
 
-- [Gary2005](https://github.com/Gary2005)
-- [czdzx](https://github.com/czdzx)
-- [Yianlaen](https://github.com/Yianlaen)
+## 📞 联系方式
+
+如有问题或需要支持，请在 GitHub 仓库中提交 issue。

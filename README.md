@@ -5,7 +5,7 @@
 <h1 align="center">CS-NET</h1>
 
 <p align="center">
-  <strong>A deep learning framework for Counter-Strike match data analysis</strong>
+  <strong>Counter-Strike 2 Match Analysis Framework</strong>
 </p>
 
 <p align="center">
@@ -21,36 +21,93 @@
 ## Quick Links
 
 - [Project Overview](#-project-overview)
-- [Prediction Tasks](#prediction-tasks)
+- [Core Components](#-core-components)
+- [Prediction Tasks](#-prediction-tasks)
+- [Impact Engine](#-impact-engine)
 - [Quick Start](#-quick-start)
-- [Web App Usage](#-web-app-usage)
-- [Web App Features](#-web-app-features)
+- [Web App](#-web-app)
+- [Project Structure](#-project-structure)
+- [Contributing](#-contributing)
 - [Acknowledgements](#-acknowledgements)
-- [Contributors](#-contributors)
 
 ---
 
 ## 📌 Project Overview
 
-CS-NET is a **Transformer**-based deep learning framework for analyzing Counter-Strike 2 match replays (`.dem` demo files). It parses match recordings, converts game states into token sequences, and uses pre-trained Transformer models for multiple real-time predictions.
+CS-NET is a comprehensive **Counter-Strike 2 match analysis framework** that combines deep learning-based predictions with rule-based tactical analysis. It parses demo files, extracts game states, and provides actionable insights through multiple components.
 
-In short: **given a match replay, the model tells you who will win, who will die, and who is most likely to get the next kill.**
+### Key Capabilities
 
-### Prediction Tasks
+1. **Deep Learning Predictions**: Transformer-based models for win rate, survival, and kill predictions
+2. **Impact Analysis**: Evaluate player contributions and impact on round outcomes
+3. **Tactical Analysis**: Map-specific tactical scoring and event detection
+4. **Interactive Visualization**: Web-based demo viewer with real-time predictions
+
+---
+
+## 🧩 Core Components
+
+### 1. CS-NET Model
+
+A Transformer-based deep learning model that processes game state sequences to predict multiple outcomes simultaneously.
+
+### 2. Impact Engine
+
+Advanced player impact analysis system that evaluates each player's real influence in rounds, combining model-based and rule-based scoring.
+
+### 3. Map Knowledge Base
+
+Map-specific configurations for tactical analysis, including areas, routes, sightlines, and utility targets.
+
+### 4. Web Application
+
+Interactive demo analysis tool with 2D radar visualization, timeline analysis, and LLM-powered match summaries.
+
+---
+
+## 🎯 Prediction Tasks
 
 | Task | Description | Output |
 |------|-------------|--------|
-| **Win Rate Prediction** | Probability of team1 (mapped from CT/T by side) winning the current round | Scalar in [0, 1] |
-| **Alive Prediction** | Per-player probability of surviving the next 5 seconds | One probability per player |
-| **Next Kill Prediction** | Which player is most likely to get the next kill | Probability distribution over 10+1 classes |
-| **Next Death Prediction** | Which player is most likely to die next | Probability distribution over 10+1 classes |
-| **Duel Prediction** | 1v1 win probability for any CT-T player pair | 5x5 probability matrix |
+| **Win Rate** | Probability of the current team winning the round | Scalar [0, 1] |
+| **Alive** | Per-player survival probability for the next 5 seconds | 10 probabilities |
+| **Next Kill** | Probability distribution for who gets the next kill | 11-class distribution |
+| **Next Death** | Probability distribution for who dies next | 11-class distribution |
+| **Duel** | 1v1 win probability for any CT-T player pair | 5×5 probability matrix |
+
+---
+
+## ⚡ Impact Engine
+
+The Impact Engine provides comprehensive player performance analysis by combining model predictions with tactical insights.
+
+### Key Features
+
+- **Round Win Impact (RWI)**: Measures action impact on team win probability
+- **Tactical Scoring**: Map-specific tactical event detection (mid control, site execution, retake, etc.)
+- **Utility Analysis**: Smoke/flash/fire/HE effectiveness evaluation
+- **Discipline Tracking**: Post-plant positioning and retake discipline
+
+### Tactical Events Detected
+
+| Category | Events |
+|----------|--------|
+| **Map Control** | `mid_control_success`, `mid_control_hold`, `key_area_isolated_death` |
+| **Site Execution** | `valid_entry_sacrifice`, `failed_entry_no_trade` |
+| **Post-Plant** | `post_plant_crossfire_hold`, `post_plant_discipline_error` |
+| **Retake** | `retake_grouped`, `retake_solo_feed` |
+| **Endgame** | `save_correct`, `save_throw`, `exit_frag_low_impact` |
+
+### Supported Maps
+
+- de_mirage (full tactical support)
+- de_ancient, de_anubis, de_dust2, de_inferno, de_nuke, de_overpass, de_train, de_vertigo
+
+---
 
 ## 🚀 Quick Start
 
 ### 1. Setup Environment
-
-Create a Python environment and install dependencies:
 
 ```bash
 conda create -n cs-net python=3.10
@@ -60,186 +117,191 @@ pip install -r requirements.txt
 
 ### 2. Download Pre-trained Models
 
-Download all pre-trained models and tokenizers to `./cs-net-models/`:
-
-Model weights are also available here: https://huggingface.co/gary2oos/CS-Net-V3
-
 ```bash
 python -m scripts.download_model
 ```
 
-### 3. Convert Demo to JSON
+Models are downloaded to `./cs-net-models/`.
 
-Process a Counter-Strike demo file (.dem) into structured JSON format:
+### 3. Analyze a Demo
 
-`examples/test.dem` is intentionally NOT included in this repository because demo files are too large.
-You must download a `.dem` file yourself (for example from HLTV) and replace the input path.
-
-```bash
-python -m data.process_demo \
-  -path examples/test.dem \
-  -interval 0.25 \
-  -out examples/test.json
-```
-
-### 4. Download Test Data
-
-To reproduce the calibration/evaluation numbers below, download the test shard first:
+#### Option A: Full Pipeline (Demo → Analysis → Report)
 
 ```bash
-python -m scripts.download_data
+# Step 1: Process demo to extract game states
+python -m demo_analysis.get_round_win_rate \
+  --demo path/to/your/demo.dem \
+  --model-root cs-net-models/ \
+  --output output/analysis.json
+
+# Step 2: Generate impact report
+python -m demo_analysis.impact_engine.cli \
+  --analysis-json output/analysis.json \
+  --out output/impact_report.md \
+  --json-out output/impact_report.json
 ```
 
-This script downloads `test/shards-00000.tar` from Hugging Face and stores it under `./dataset/test/`.
-
-### 5. Calibrate Temperature Scaling
-
-You can calibrate the model3.0 heads with:
+#### Option B: Quick Test with Existing Analysis
 
 ```bash
-python -m scripts.train3_t_scaling --dataset_path dataset --device cpu
+python -m demo_analysis.impact_engine.cli \
+  --analysis-json output/analysis.json \
+  --out output/report.md \
+  --json-out output/report.json
 ```
 
-On the current test shard, the calibration results are:
+### 4. Run Tests
 
-| Task | T | Before Loss | Before ECE | Before Acc | After Loss | After ECE | After Acc |
-|------|---|-------------|------------|------------|------------|-----------|-----------|
-| Alive | 1.193158 | 0.431486 | 0.028640 | 0.774641 | 0.429344 | 0.021371 | 0.774641 |
-| Duel | 1.146975 | 0.633122 | 0.017835 | 0.632217 | 0.632133 | 0.014517 | 0.632217 |
-| Next Death | 1.493995 | 1.785793 | 0.077382 | 0.342485 | 1.741089 | 0.012107 | 0.342485 |
-| Next Kill | 1.602551 | 1.801647 | 0.102502 | 0.339024 | 1.736153 | 0.012922 | 0.339024 |
-| Win Rate | 1.061342 | 0.467820 | 0.029351 | 0.754566 | 0.467459 | 0.029516 | 0.754566 |
+```bash
+python -m pytest demo_analysis/impact_engine/tests -q
+```
 
-## 🌐 Web App Usage
+---
 
-CS-NET now includes an interactive web app for demo analysis and LLM-based post-game summary.
+## 🌐 Web App
 
-> **Attribution Notice**
-> The built-in 2D viewer is a modified integration of
-> [`sparkoo/csgo-2d-demo-viewer`](https://github.com/sparkoo/csgo-2d-demo-viewer).
-> We use the upstream project under the MIT License and adapt it for CS-NET's
-> Flask routes and model-prediction overlays.
-
-### 1. Start the web app
+### Start the Web Application
 
 ```bash
 python -m demo_analysis.web_app
 ```
 
-Then open:
+Open `http://127.0.0.1:7860` in your browser.
 
-```text
-http://127.0.0.1:7860
-```
+### Features
 
-### 2. Analyze a demo in UI
+- **Interactive Demo Analysis**: Upload and analyze .dem files
+- **Live 2D Radar**: Real-time player positions and game state
+- **Timeline Analysis**: Round-by-round win rate curve with kill markers
+- **Player Metrics**: Survival probability, duel win rates, impact scores
+- **LLM Summary**: AI-generated match analysis reports
+- **Bilingual Support**: Chinese/English UI and reports
 
-1. Upload a .dem file.
-2. Select the **model root directory** (normally `cs-net-models/`). The web app
-   loads all five prediction heads (`alive`, `nxt_kill`, `nxt_death`,
-   `win_rate`, `duel`) from their subdirectories in one go.
-3. Select device (cpu / cuda).
-4. Click Start Analysis.
+---
 
-### 3. Generate LLM summary
-
-1. Fill API Key, model name, and Base URL (OpenAI-compatible).
-2. Choose app language (Chinese / English).
-3. Click Generate AI Review.
-
-## ✨ Web App Features
-
-- Bilingual UI and bilingual LLM output (Chinese / English).
-- Round-by-round win-rate curve with kill markers.
-- Hover-to-inspect player contribution at each timeline point.
-- **Live 2D radar** that syncs with the win-rate curve — player positions,
-  team colour, alive/dead state, and "recently flashed" flag are drawn on the
-  real minimap overview for every tick the cursor touches.
-- **Per-tick metric panels** driven by all four prediction heads:
-  5-second survival probability, next-kill distribution, next-death
-  distribution, and the full 5×5 CT-vs-T duel matrix.
-- **Advanced metrics table** aggregated across the whole match: per-player
-  average kill/death/survival probability, hard-duel win rate (fights the
-  model thought they would lose), easy-duel win rate (fights they were
-  favoured in), highlight rate, plus a |swing|-sorted ranking of the most
-  impactful kills.
-- **One-click 2D replay viewer** — launches a bundled build of
-  [`sparkoo/csgo-2d-demo-viewer`](https://github.com/sparkoo/csgo-2d-demo-viewer)
-  in a new tab with the same demo, adding smoke/flash/grenade trajectories
-  and an in-page timeline overlaid with CS-NET's predictions.
-- Current round final contribution table + full match average contribution table.
-- MVP and SVP badges.
-- LLM summary supports streaming output and Markdown rendering.
-- Auto-save user settings in browser local storage:
-  API Key, model name, base URL, temperature, device, model path, batch size, language.
-- Team-side context for LLM:
-  per-round attack/defense roles, first-half/second-half side assignment and half scores.
-
-## 🎯 Impact Engine
-
-The Impact Engine provides advanced player impact analysis based on CS-NET's prediction outputs. It evaluates each player's real influence in each round, distinguishing between kills, deaths, trades, and objective plays.
-
-### Key Features
-
-- **RWI (Round Win Impact)**: Measures how each action affected team win probability
-- **Death Risk Assessment**: Distinguishes self-created risk from forced risk deaths
-- **Rule-Based Labeling**: Identifies opening kills, trades, clutch plays, and more
-- **Comprehensive Scoring**: Combines model-based and rule-based quality scores
-- **Chinese Reports**: Generates detailed Chinese-language post-match reports
-
-### Quick Start
-
-```bash
-# Analyze a demo and generate reports
-python -m demo_analysis.impact_engine.cli \
-  --analysis-json output/analysis.json \
-  --out report.md \
-  --json-out report.json
-```
-
-### Output
-
-1. **Markdown Report** (`--out`): Detailed Chinese analysis with:
-   - Per-player ratings (0-100)
-   - Model Impact Score / Rule Quality Score
-   - High impact rounds count
-   - Death analysis (bad deaths, self-created risk, forced risk)
-   - Hard Duel Wins / Easy Duel Losses
-   - Key positive/negative events
-   - Improvement suggestions
-
-2. **JSON Output** (`--json-out`): Structured data for further processing
-
-### Scoring Formula
+## 📁 Project Structure
 
 ```
-Final Score = Model Impact Score × 0.65 + Rule Quality Score × 0.35
-
-Model Impact Score = RWI总和 + Hard Duel Wins × 0.8 - Easy Duel Losses × 0.6
-Rule Quality Score = 补枪加分 + 残局加分 - 白给死亡扣分 - 自造风险扣分
+cs-mvp/
+├── assets/                    # Static assets (logo, images)
+├── config/                    # Configuration files
+│   └── callouts/              # Map-specific configurations
+├── data/                      # Data processing scripts
+├── demo_analysis/             # Demo analysis pipeline
+│   ├── impact_engine/         # Impact analysis engine
+│   │   ├── tests/             # Unit tests
+│   │   ├── cli.py             # Command-line interface
+│   │   ├── engine.py          # Core engine
+│   │   ├── scoring.py         # Scoring calculations
+│   │   ├── tactical_scoring.py # Tactical event scoring
+│   │   ├── map_tactics.py     # Map area lookup
+│   │   └── report.py          # Report generation
+│   ├── static/                # Web app static files
+│   ├── templates/             # HTML templates
+│   └── web_app.py            # Flask web server
+├── demoparser_utils/          # Demo parsing utilities
+├── models/                    # Model implementations
+├── output/                    # Generated reports
+├── scripts/                   # Utility scripts
+└── tests/                     # Additional tests
 ```
 
-### Configuration
+### Key Files
 
-All weights are in `demo_analysis/impact_engine/config.py`. Adjust to tune scoring sensitivity.
+| File | Description |
+|------|-------------|
+| [`demo_analysis/impact_engine/engine.py`](demo_analysis/impact_engine/engine.py) | Core impact calculation engine |
+| [`demo_analysis/impact_engine/scoring.py`](demo_analysis/impact_engine/scoring.py) | Player scoring logic |
+| [`demo_analysis/impact_engine/tactical_scoring.py`](demo_analysis/impact_engine/tactical_scoring.py) | Tactical event detection and scoring |
+| [`demo_analysis/impact_engine/map_tactics.py`](demo_analysis/impact_engine/map_tactics.py) | Map area lookup and utilities |
+| [`demo_analysis/impact_engine/report.py`](demo_analysis/impact_engine/report.py) | Markdown report generation |
+| [`config/callouts/de_mirage.yaml`](config/callouts/de_mirage.yaml) | Mirage map configuration |
+
+---
+
+## 📊 Output Formats
+
+### Markdown Report
+
+Contains detailed analysis including:
+- Player ratings (0-100 scale)
+- Round Win Impact (RWI) breakdown
+- Map control performance
+- Tactical event timeline
+- Death analysis and discipline metrics
+- Utility usage effectiveness
+- Improvement suggestions
+
+### JSON Output
+
+Structured data for programmatic access:
+- Player impacts per round
+- Tactical events with timestamps
+- Model predictions
+- Utility usage statistics
+
+---
+
+## 🤝 Contributing
+
+### Development Workflow
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Make your changes
+4. Run tests (`python -m pytest demo_analysis/impact_engine/tests`)
+5. Commit and push
+6. Create a Pull Request
+
+### Code Style
+
+- Follow PEP 8 for Python code
+- Use type hints for function signatures
+- Add docstrings for public functions
+- Include unit tests for new features
+
+---
 
 ## 🙏 Acknowledgements
 
-The bundled 2D replay viewer under `demo_analysis/static/viewer/` is a lightly
-modified build of the excellent open-source project
-**[sparkoo/csgo-2d-demo-viewer](https://github.com/sparkoo/csgo-2d-demo-viewer)**
-by **Michal Vala**, distributed under the MIT License (© 2023 Michal Vala).
-All credit for the viewer's parsing, rendering, and UX belongs to the upstream
-authors — CS-NET only rewires its asset paths and feeds in the
-per-tick predictions from our models. Huge thanks to Michal and the upstream
-contributors for making such a polished tool available to the community.
+### Original CS-NET Project
 
-The original upstream license is reproduced verbatim at
-[`demo_analysis/static/viewer/LICENSE`](demo_analysis/static/viewer/LICENSE)
-and applies to every file in that directory. If you reuse or redistribute the
-viewer portion of this repository, please preserve that notice.
+This project is built upon and extends the original **CS-NET** framework developed by Gary2005 and contributors:
 
-## ⭐️ Star History
+- **Original Repository**: [Gary2005/cs-net](https://github.com/Gary2005/cs-net)
+- **Pre-trained Models**: [Hugging Face Repository](https://huggingface.co/gary2oos/CS-Net-V3)
+- **Original Paper**: CS-NET: A Transformer-based Framework for Counter-Strike Match Analysis (Under Review)
+
+### Third-Party Components
+
+- **2D Demo Viewer**: Modified integration of [sparkoo/csgo-2d-demo-viewer](https://github.com/sparkoo/csgo-2d-demo-viewer) under MIT License
+- **Demo Parsing**: Uses Valve's demo parsing utilities
+- **Pre-trained Models**: Hosted on Hugging Face
+
+### References
+
+If you use this project in your research or work, please cite the original CS-NET work:
+
+```bibtex
+@misc{csnet2024,
+  author = {Gary2005 and contributors},
+  title = {CS-NET: A Transformer-based Framework for Counter-Strike Match Analysis},
+  year = {2024},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/Gary2005/cs-net}},
+}
+```
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## ⭐ Star History
 
 <a href="https://www.star-history.com/?repos=Gary2005%2Fcs-net&type=date&legend=top-left">
  <picture>
@@ -249,8 +311,8 @@ viewer portion of this repository, please preserve that notice.
  </picture>
 </a>
 
-## 🤝 Contributors
+---
 
-- [Gary2005](https://github.com/Gary2005)
-- [czdzx](https://github.com/czdzx)
-- [Yianlaen](https://github.com/Yianlaen)
+## 📞 Contact
+
+For questions or support, please open an issue in the GitHub repository.

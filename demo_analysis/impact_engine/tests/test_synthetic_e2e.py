@@ -157,6 +157,31 @@ class TestCLI(unittest.TestCase):
             # Check for presence of expected stats fields (even if 0)
             self.assertIn("death_stats", player, "Player missing death_stats")
             self.assertIn("kill_stats", player, "Player missing kill_stats")
+
+    def test_cli_utility_debug_outputs_diagnostics(self):
+        """Test that utility debug prints diagnostics without changing report generation."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            md_path = Path(tmpdir) / "impact_report.md"
+            json_path = Path(tmpdir) / "impact_report.json"
+
+            result = subprocess.run(
+                [
+                    sys.executable, "-m", "demo_analysis.impact_engine.cli",
+                    "--analysis-json", str(self.synthetic_json_path),
+                    "--out", str(md_path),
+                    "--json-out", str(json_path),
+                    "--utility-debug",
+                ],
+                cwd=str(self.project_root),
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, f"CLI failed: {result.stderr}")
+            self.assertIn("Utility diagnostics", result.stdout)
+            self.assertIn("Damage weapon values", result.stdout)
+            self.assertTrue(md_path.exists())
+            self.assertTrue(json_path.exists())
     
     def test_temporary_file_output(self):
         """Test that the file output system works."""

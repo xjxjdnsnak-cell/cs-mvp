@@ -1,5 +1,114 @@
 nearest_threshold: 300
 overview: demo_analysis/static/overviews/de_inferno.png
+smoke_targets:
+  inferno_b_ct_smoke:
+    map: de_inferno
+    intent: execute_smoke
+    target_area: b_ct
+    target_center: [984, 2717]
+    smoke_radius: 170
+    required_block_lines:
+    - name: ct_to_b_entry
+      from_area: ct_spawn
+      to_area: b_entry
+      from_xy: [984, 2717]
+      to_xy: [706, 2082]
+    - name: ct_to_default_plant
+      from_area: ct_spawn
+      to_area: default_plant
+      from_xy: [984, 2717]
+      to_xy: [355, 2780]
+    teammate_cross_routes:
+    - t_banana_to_site
+    allowed_leak_tolerance: 0.15
+    counter_he_zones:
+    - name: b_entry_cross
+      name_cn: B点入口过点
+      polygon:
+      - [520, 1900]
+      - [900, 1900]
+      - [900, 2300]
+      - [520, 2300]
+    - name: default_plant
+      name_cn: 默认下包位
+      polygon:
+      - [150, 2550]
+      - [520, 2550]
+      - [520, 2950]
+      - [150, 2950]
+    - name: coffins_clear
+      name_cn: 棺材清点路线
+      polygon:
+      - [560, 2650]
+      - [920, 2650]
+      - [920, 3050]
+      - [560, 3050]
+  inferno_b_coffins_smoke:
+    map: de_inferno
+    intent: execute_smoke
+    target_area: coffins
+    target_center: [740, 2873]
+    smoke_radius: 170
+    required_block_lines:
+    - name: coffins_to_site
+      from_area: coffins
+      to_area: b_entry
+      from_xy: [740, 2873]
+      to_xy: [706, 2082]
+    teammate_cross_routes:
+    - t_banana_to_site
+    allowed_leak_tolerance: 0.15
+    counter_he_zones:
+    - name: b_entry_cross
+      name_cn: B点入口过点
+      polygon:
+      - [520, 1900]
+      - [900, 1900]
+      - [900, 2300]
+      - [520, 2300]
+    - name: default_plant
+      name_cn: 默认下包位
+      polygon:
+      - [150, 2550]
+      - [520, 2550]
+      - [520, 2950]
+      - [150, 2950]
+he_cross_zones:
+- name: banana_entry_cross
+  polygon:
+  - [520, 1900]
+  - [900, 1900]
+  - [900, 2300]
+  - [520, 2300]
+plant_zones:
+- name: b_default
+  polygon:
+  - [150, 2550]
+  - [520, 2550]
+  - [520, 2950]
+  - [150, 2950]
+fire_targets:
+  inferno_banana_choke_fire:
+    map: de_inferno
+    intent: anti_rush_fire
+    target_area: banana_choke
+    center: [706, 2082]
+    radius: 190
+    kind: choke
+  inferno_b_newbox_clear_fire:
+    map: de_inferno
+    intent: clear_position_fire
+    target_area: newbox
+    center: [355, 2780]
+    radius: 180
+    kind: strong_position
+  inferno_b_bomb_anti_defuse_fire:
+    map: de_inferno
+    intent: anti_defuse_fire
+    target_area: b_default_plant
+    center: [355, 2780]
+    radius: 210
+    kind: objective
 polygons_cn:
 - name: 匪家
   points:

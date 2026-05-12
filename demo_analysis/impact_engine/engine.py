@@ -33,6 +33,13 @@ from .scoring import (
     calculate_player_match_impact,
     calculate_player_round_impact,
 )
+from .utility_diagnostics import (
+    add_score_extreme_diagnostics,
+    build_round_utility_diagnostics,
+    empty_utility_diagnostics,
+    merge_utility_diagnostics,
+)
+from .rating import normalize_player_ratings
 
 
 class ImpactEngine:
@@ -86,6 +93,7 @@ class ImpactEngine:
         player_impact_map: dict[str, PlayerMatchImpact] = {}
         all_player_labels: dict[str, list[str]] = {}
         player_risk_map: dict[str, dict[str, RiskAssessment]] = {}
+        utility_diagnostics = empty_utility_diagnostics()
 
         team1_players = self.match_info.get("team1_players", [])
         team2_players = self.match_info.get("team2_players", [])
@@ -99,6 +107,10 @@ class ImpactEngine:
                 round_data,
                 team1_players,
                 team2_players
+            )
+            utility_diagnostics = merge_utility_diagnostics(
+                utility_diagnostics,
+                build_round_utility_diagnostics(round_context, team1_players + team2_players),
             )
 
             player_risk_assessments: dict[str, RiskAssessment] = {}
@@ -163,17 +175,30 @@ class ImpactEngine:
 
         player_impacts = list(player_impact_map.values())
 
+        rating_stats = normalize_player_ratings(player_impacts)
+        
+        utility_diagnostics = add_score_extreme_diagnostics(utility_diagnostics, player_impacts)
+        if rating_stats:
+            utility_diagnostics.update(rating_stats)
+        
+        clip_total = (
+            utility_diagnostics.get("model_impact_clip_count_min", 0)
+            + utility_diagnostics.get("model_impact_clip_count_max", 0)
+        )
+        if clip_total >= max(2, len(player_impacts) // 4):
+            self.warnings.append("model_impact_score appears heavily clipped; rating calibration may need adjustment.")
+
         map_name = self.rounds[0].get("map_name", "Unknown") if self.rounds else "Unknown"
         total_rounds = len(self.rounds)
 
         winner_team = self.match_info.get("winner", "Unknown")
 
-        team1_name = self.match_info.get("team1_players", ["Team 1"])
-        team2_name = self.match_info.get("team2_players", ["Team 2"])
-        if isinstance(team1_name, list) and team1_name:
-            team1_name = team1_name[0]
-        if isinstance(team2_name, list) and team2_name:
-            team2_name = team2_name[0]
+        team1_name = self.match_info.get("team1_name", "")
+        team2_name = self.match_info.get("team2_name", "")
+        if not team1_name:
+            team1_name = "Team 1"
+        if not team2_name:
+            team2_name = "Team 2"
 
         report = ImpactReport(
             match_info=self.match_info,
@@ -185,6 +210,7 @@ class ImpactEngine:
             map_name=map_name,
             confidence="medium" if len(self.warnings) > 0 else "high",
             warnings=self.warnings,
+            utility_diagnostics=utility_diagnostics,
         )
 
         return report
