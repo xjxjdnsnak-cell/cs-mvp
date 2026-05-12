@@ -828,6 +828,9 @@ def build_dashboard_payload(raw_results: dict[str, Any]) -> dict[str, Any]:
     losers = [x for x in overall if x["team"] == match_loser]
     tactical_rounds, map_callout_coverage = build_tactical_rounds(rounds)
 
+    team1_name = "Team 1"
+    team2_name = "Team 2"
+
     return {
         "rounds": rounds,
         "overall": overall,
@@ -840,6 +843,8 @@ def build_dashboard_payload(raw_results: dict[str, Any]) -> dict[str, Any]:
             "team2_round_wins": team2_round_wins,
             "winner": match_winner,
             "loser": match_loser,
+            "team1_name": team1_name,
+            "team2_name": team2_name,
             "team1_players": sorted(team1_roster),
             "team2_players": sorted(team2_roster),
             "mvp": winners[0] if winners else None,

@@ -10,6 +10,7 @@ from .models import (
     PlayerRoundImpact,
     RiskType,
 )
+from .timeline import generate_player_timeline, generate_timeline_markdown, generate_match_timeline_markdown
 from .utility_flash import flash_blind_phrase
 
 
@@ -433,10 +434,7 @@ def generate_player_report(player: PlayerMatchImpact) -> str:
     lines.append(f"## 综合评分: {rating:.0f} / 100")
     lines.append("")
 
-    model_score = player.model_impact_score
-    rule_score = player.rule_quality_score
-    lines.append(f"**模型影响分**: {model_score:.1f}")
-    lines.append(f"**规则质量分**: {rule_score:.1f}")
+    lines.append(f"**规则质量分**: {player.rule_quality_score:.1f}")
     lines.append("")
 
     kills, deaths, _ = player.kda
@@ -477,6 +475,7 @@ def generate_player_report(player: PlayerMatchImpact) -> str:
     lines.extend(generate_fire_quality_section(player))
     lines.extend(generate_he_quality_section(player))
     lines.extend(generate_tactical_section(player))
+    lines.extend(generate_timeline_markdown(player))
 
     if player.positive_kill_events or player.negative_death_events:
         lines.append("### 关键正面行为")
@@ -682,6 +681,11 @@ def generate_match_report(report: ImpactReport) -> str:
         kills, deaths, _ = player.kda
         lines.append(f"- **{player.player_name}**: {rating:.0f}/100 (K/D: {kills}/{deaths})")
     lines.append("")
+
+    lines.append("---")
+    lines.append("")
+
+    lines.extend(generate_match_timeline_markdown(report))
 
     lines.append("---")
     lines.append("")
@@ -920,6 +924,7 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
             ],
             "positive_events": player.positive_kill_events[:5],
             "negative_events": player.negative_death_events[:5],
+            "timeline": generate_player_timeline(player),
         }
         result["players"].append(player_data)
 

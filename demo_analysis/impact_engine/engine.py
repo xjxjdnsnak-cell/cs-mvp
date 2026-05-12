@@ -193,12 +193,12 @@ class ImpactEngine:
 
         winner_team = self.match_info.get("winner", "Unknown")
 
-        team1_name = self.match_info.get("team1_players", ["Team 1"])
-        team2_name = self.match_info.get("team2_players", ["Team 2"])
-        if isinstance(team1_name, list) and team1_name:
-            team1_name = team1_name[0]
-        if isinstance(team2_name, list) and team2_name:
-            team2_name = team2_name[0]
+        team1_name = self.match_info.get("team1_name", "")
+        team2_name = self.match_info.get("team2_name", "")
+        if not team1_name:
+            team1_name = "Team 1"
+        if not team2_name:
+            team2_name = "Team 2"
 
         report = ImpactReport(
             match_info=self.match_info,

@@ -133,7 +133,7 @@ def evaluate_mid_control(player: str, round_context: RoundContext) -> list[Tacti
                         tick=tick.round_seconds,
                         label="mid_control_success" if is_t else "key_area_control",
                         score=0.3,
-                        reason=f"玩家在{area.name_cn}帮助队伍获得中路控制",
+                        reason=f"玩家在{area.name_cn}参与中路控制",
                         area=area.name,
                         area_cn=area.name_cn,
                         phase="map_control",
@@ -152,7 +152,7 @@ def evaluate_mid_control(player: str, round_context: RoundContext) -> list[Tacti
                     tick=0.0,
                     label="key_area_isolated_death",
                     score=-0.8,
-                    reason=f"玩家在{death_area}独自前压，附近无队友补枪，死亡后队伍失去中路控制",
+                    reason=f"玩家在{death_area}独自前压，附近无队友补枪，死亡后队伍中路压力下降",
                     area=death_area,
                     phase="map_control",
                 ))

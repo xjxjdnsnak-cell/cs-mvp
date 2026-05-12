@@ -1,6 +1,6 @@
 from typing import Any
 
-from .models import PredictionTick, RoundContext
+from .models import EventType, PredictionTick, RoundContext
 
 try:
     from .map_tactics import locate_area, locate_player_area, find_area_by_name
