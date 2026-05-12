@@ -9,6 +9,7 @@ except ImportError:
     locate_player_area = None
     find_area_by_name = None
 
+
 _SITE_RADIUS = 800.0
 _UTILITY_NEAR_RADIUS = 1200.0
 _SAVE_ROUND_SECONDS = 80
@@ -17,10 +18,11 @@ _EXIT_BOMB_TIMER = 35
 _EXIT_ALIVE_DIFF_THRESHOLD = 3
 _EARLY_DEFAULT_SECONDS = 15
 _RETAKE_CT_MIN = 2
-_SITE_EXECUTE_T_MIN = 3
-_SITE_EXECUTE_AREAS = {"a_site", "b_site", "a_ramp", "palace", "b_apps", "ramp"}
-_TRADE_WINDOW_SECONDS = 5.0
-_BOMB_PLANT_APPROACH_WINDOW = 10.0
+_SITE_EXECUTE_T_MIN = 2
+
+_A_EXECUTE_AREAS = {"a_ramp", "palace", "a_site", "default_plant_a", "triple"}
+_B_EXECUTE_AREAS = {"b_apps", "b_site", "default_plant_b"}
+_CT_RETAKE_ORIGINS = {"market", "ct_spawn", "jungle", "stairs", "short", "market_window", "market_door"}
 
 
 def get_alive_counts(round_context: RoundContext, tick_index: int) -> tuple[int, int]:
@@ -167,9 +169,9 @@ def has_utility_near_site(round_context: RoundContext, tick_index: int, site_nam
     return False
 
 
-def is_ct_moving_to_site(round_context: RoundContext, tick_index: int) -> bool:
+def count_ct_moving_to_site(round_context: RoundContext, tick_index: int) -> int:
     if tick_index < 1 or tick_index >= len(round_context.ticks):
-        return False
+        return 0
     tick = round_context.ticks[tick_index]
     prev_tick = round_context.ticks[tick_index - 1]
     ct_moving_count = 0
@@ -199,14 +201,15 @@ def is_ct_moving_to_site(round_context: RoundContext, tick_index: int) -> bool:
             prev_dist = _distance_2d(prev_pos, site_center)
             if curr_dist < prev_dist:
                 ct_moving_count += 1
-    return ct_moving_count >= _RETAKE_CT_MIN
+    return ct_moving_count
 
 
-def _count_t_in_site_execute_areas(round_context: RoundContext, tick_index: int) -> int:
+def _count_t_in_site_execute_areas(round_context: RoundContext, tick_index: int) -> tuple[int, int]:
     if tick_index < 0 or tick_index >= len(round_context.ticks):
-        return 0
+        return 0, 0
     tick = round_context.ticks[tick_index]
-    count = 0
+    a_count = 0
+    b_count = 0
     for player in tick.players_info:
         if not player.get("is_alive", True):
             continue
@@ -216,7 +219,43 @@ def _count_t_in_site_execute_areas(round_context: RoundContext, tick_index: int)
         if locate_player_area is not None:
             try:
                 area_info = locate_player_area(player, round_context.map_name)
-                if area_info is not None and area_info.name in _SITE_EXECUTE_AREAS:
+                if area_info is not None:
+                    if area_info.name in _A_EXECUTE_AREAS:
+                        a_count += 1
+                    elif area_info.name in _B_EXECUTE_AREAS:
+                        b_count += 1
+            except Exception:
+                pass
+    return a_count, b_count
+
+
+def _has_recent_combat_or_utility(round_context: RoundContext, tick_index: int, window: float = 3.0) -> bool:
+    if tick_index < 0 or tick_index >= len(round_context.ticks):
+        return False
+    tick = round_context.ticks[tick_index]
+    tick_time = tick.round_seconds
+    for event in round_context.events:
+        if event.event_type in (EventType.KILL, EventType.DEATH):
+            if abs(event.tick - tick_time) <= window:
+                return True
+    return has_utility_near_site(round_context, tick_index, "a_site") or has_utility_near_site(round_context, tick_index, "b_site")
+
+
+def _count_ct_from_retake_origins(round_context: RoundContext, tick_index: int) -> int:
+    if tick_index < 0 or tick_index >= len(round_context.ticks):
+        return 0
+    tick = round_context.ticks[tick_index]
+    count = 0
+    for player in tick.players_info:
+        if not player.get("is_alive", True):
+            continue
+        name = player.get("name")
+        if not _is_ct_player(round_context, name):
+            continue
+        if locate_player_area is not None:
+            try:
+                area_info = locate_player_area(player, round_context.map_name)
+                if area_info is not None and area_info.name in _CT_RETAKE_ORIGINS:
                     count += 1
             except Exception:
                 pass
@@ -228,13 +267,12 @@ def _has_traded_death_in_site_areas(round_context: RoundContext, tick_index: int
         return False
     tick = round_context.ticks[tick_index]
     tick_time = tick.round_seconds
-    from .models import EventType
     for event in round_context.events:
         if event.event_type != EventType.DEATH:
             continue
-        if abs(event.tick - tick_time) > 2.0:
+        if abs(event.tick - tick_time) > 5.0:
             continue
-        death_tick_idx = tick_index
+        death_tick_idx = _find_nearest_tick_index(round_context, event.tick)
         if death_tick_idx < 0 or death_tick_idx >= len(round_context.ticks):
             continue
         death_tick = round_context.ticks[death_tick_idx]
@@ -243,13 +281,13 @@ def _has_traded_death_in_site_areas(round_context: RoundContext, tick_index: int
                 if locate_area is not None:
                     try:
                         area = locate_area(round_context.map_name, p.get("X", 0.0), p.get("Y", 0.0))
-                        if area is not None and area.name in _SITE_EXECUTE_AREAS:
+                        if area is not None and area.name in _A_EXECUTE_AREAS | _B_EXECUTE_AREAS:
                             teammates = (
                                 round_context.team2_players if round_context.team1_on_ct else round_context.team1_players
                             )
                             for kill_event in round_context.events:
                                 if kill_event.event_type == EventType.KILL and kill_event.player in teammates:
-                                    if 0 < kill_event.tick - event.tick <= _TRADE_WINDOW_SECONDS:
+                                    if 0 < kill_event.tick - event.tick <= 5.0:
                                         return True
                     except Exception:
                         pass
@@ -257,62 +295,78 @@ def _has_traded_death_in_site_areas(round_context: RoundContext, tick_index: int
     return False
 
 
-def _has_multiple_t_engaging_near_site(round_context: RoundContext, tick_index: int) -> bool:
-    if tick_index < 0 or tick_index >= len(round_context.ticks):
-        return False
-    a_count = count_t_near_site(round_context, tick_index, "a_site")
-    b_count = count_t_near_site(round_context, tick_index, "b_site")
-    if a_count >= 2 or b_count >= 2:
-        tick = round_context.ticks[tick_index]
-        for event in round_context.events:
-            if event.event_type == EventType.KILL or event.event_type == EventType.DEATH:
-                if abs(event.tick - tick.round_seconds) <= 3.0:
-                    return True
-    return False
+def _find_nearest_tick_index(round_context: RoundContext, tick_time: float) -> int:
+    best_idx = 0
+    best_diff = float("inf")
+    for i, t in enumerate(round_context.ticks):
+        diff = abs(t.round_seconds - tick_time)
+        if diff < best_diff:
+            best_diff = diff
+            best_idx = i
+    return best_idx
 
 
 def detect_round_phase(round_context: RoundContext, tick_index: int) -> str:
     if tick_index < 0 or tick_index >= len(round_context.ticks):
         return "map_control"
+    
     tick = round_context.ticks[tick_index]
     team1_alive, team2_alive = get_alive_counts(round_context, tick_index)
+    
     if round_context.team1_on_ct:
         ct_alive = team1_alive
         t_alive = team2_alive
     else:
         ct_alive = team2_alive
         t_alive = team1_alive
+    
     if round_context.bomb_planted_time is not None:
+        if tick.round_seconds < round_context.bomb_planted_time:
+            if round_context.bomb_planted_time - tick.round_seconds <= 10.0:
+                return "site_execute"
+        
         if tick.round_seconds > round_context.bomb_planted_time + _EXIT_BOMB_TIMER:
             return "exit_phase"
-        if is_ct_moving_to_site(round_context, tick_index):
+        
+        ct_moving = count_ct_moving_to_site(round_context, tick_index)
+        if ct_moving >= _RETAKE_CT_MIN:
             return "retake"
-        # If within approach window BEFORE bomb plant, it's still site_execute phase
-        # But AFTER bomb plant, it should be post_plant unless other site_execute conditions met
-        if tick.round_seconds < round_context.bomb_planted_time and round_context.bomb_planted_time - tick.round_seconds <= _BOMB_PLANT_APPROACH_WINDOW:
-            return "site_execute"
+        
+        ct_from_origins = _count_ct_from_retake_origins(round_context, tick_index)
+        if ct_from_origins >= _RETAKE_CT_MIN:
+            return "retake"
+        
         return "post_plant"
-    a_count = count_t_near_site(round_context, tick_index, "a_site")
-    b_count = count_t_near_site(round_context, tick_index, "b_site")
-    if a_count >= _SITE_EXECUTE_T_MIN and has_utility_near_site(round_context, tick_index, "a_site"):
-        return "site_execute"
-    if b_count >= _SITE_EXECUTE_T_MIN and has_utility_near_site(round_context, tick_index, "b_site"):
-        return "site_execute"
-    t_in_execute_areas = _count_t_in_site_execute_areas(round_context, tick_index)
-    if t_in_execute_areas >= 2:
-        return "site_execute"
+    
+    a_count, b_count = _count_t_in_site_execute_areas(round_context, tick_index)
+    has_combat = _has_recent_combat_or_utility(round_context, tick_index)
+    
     if _has_traded_death_in_site_areas(round_context, tick_index):
         return "site_execute"
-    if _has_multiple_t_engaging_near_site(round_context, tick_index):
+    
+    if (a_count >= 2 or b_count >= 2) and has_combat:
         return "site_execute"
+    
+    if a_count >= _SITE_EXECUTE_T_MIN and has_utility_near_site(round_context, tick_index, "a_site"):
+        return "site_execute"
+    
+    if b_count >= _SITE_EXECUTE_T_MIN and has_utility_near_site(round_context, tick_index, "b_site"):
+        return "site_execute"
+    
+    if a_count >= _SITE_EXECUTE_T_MIN or b_count >= _SITE_EXECUTE_T_MIN:
+        return "site_execute"
+    
     if tick.round_seconds > _SAVE_ROUND_SECONDS:
         if t_alive <= _SAVE_ALIVE_THRESHOLD and ct_alive >= 3:
             return "save"
         if ct_alive <= _SAVE_ALIVE_THRESHOLD and t_alive >= 3:
             return "save"
+    
     alive_diff = abs(ct_alive - t_alive)
     if (ct_alive <= 1 or t_alive <= 1) and alive_diff >= _EXIT_ALIVE_DIFF_THRESHOLD:
         return "exit_phase"
+    
     if tick.round_seconds < _EARLY_DEFAULT_SECONDS:
         return "early_default"
+    
     return "map_control"
