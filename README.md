@@ -264,6 +264,14 @@ Structured data for programmatic access:
 
 ## 🙏 Acknowledgements
 
+### Original CS-NET Project
+
+This project is built upon and extends the original **CS-NET** framework developed by Gary2005 and contributors:
+
+- **Original Repository**: [Gary2005/cs-net](https://github.com/Gary2005/cs-net)
+- **Pre-trained Models**: [Hugging Face Repository](https://huggingface.co/gary2oos/CS-Net-V3)
+- **Original Paper**: CS-NET: A Transformer-based Framework for Counter-Strike Match Analysis (Under Review)
+
 ### Third-Party Components
 
 - **2D Demo Viewer**: Modified integration of [sparkoo/csgo-2d-demo-viewer](https://github.com/sparkoo/csgo-2d-demo-viewer) under MIT License
@@ -272,8 +280,18 @@ Structured data for programmatic access:
 
 ### References
 
-- CS-NET Model: [Hugging Face Repository](https://huggingface.co/gary2oos/CS-Net-V3)
-- Original CS-NET Paper: Coming soon
+If you use this project in your research or work, please cite the original CS-NET work:
+
+```bibtex
+@misc{csnet2024,
+  author = {Gary2005 and contributors},
+  title = {CS-NET: A Transformer-based Framework for Counter-Strike Match Analysis},
+  year = {2024},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/Gary2005/cs-net}},
+}
+```
 
 ---
 

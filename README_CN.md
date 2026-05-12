@@ -264,16 +264,34 @@ cs-mvp/
 
 ## 🙏 致谢
 
+### 原始 CS-NET 项目
+
+本项目基于并扩展了由 Gary2005 和贡献者开发的原始 **CS-NET** 框架：
+
+- **原始仓库**: [Gary2005/cs-net](https://github.com/Gary2005/cs-net)
+- **预训练模型**: [Hugging Face 仓库](https://huggingface.co/gary2oos/CS-Net-V3)
+- **原始论文**: CS-NET: A Transformer-based Framework for Counter-Strike Match Analysis (审核中)
+
 ### 第三方组件
 
 - **2D Demo 查看器**：基于 [sparkoo/csgo-2d-demo-viewer](https://github.com/sparkoo/csgo-2d-demo-viewer) 的修改集成，MIT 许可证
 - **Demo 解析**：使用 Valve 的 demo 解析工具
 - **预训练模型**：托管在 Hugging Face
 
-### 参考资料
+### 引用说明
 
-- CS-NET 模型：[Hugging Face 仓库](https://huggingface.co/gary2oos/CS-Net-V3)
-- 原始 CS-NET 论文：即将发布
+如果您在研究或工作中使用本项目，请引用原始 CS-NET 工作：
+
+```bibtex
+@misc{csnet2024,
+  author = {Gary2005 and contributors},
+  title = {CS-NET: A Transformer-based Framework for Counter-Strike Match Analysis},
+  year = {2024},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/Gary2005/cs-net}},
+}
+```
 
 ---
 
