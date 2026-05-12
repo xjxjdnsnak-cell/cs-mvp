@@ -10,7 +10,6 @@ from .models import (
     PlayerRoundImpact,
     RiskType,
 )
-from .timeline import generate_player_timeline, generate_timeline_markdown, generate_match_timeline_markdown
 from .utility_flash import flash_blind_phrase
 
 
@@ -351,48 +350,10 @@ def generate_he_quality_section(player: PlayerMatchImpact) -> list[str]:
     return lines
 
 
-def generate_tactical_section(player: PlayerMatchImpact) -> list[str]:
-    if player.map_control_score == 0.0 and player.tactical_discipline_score == 0.0 and not player.key_area_deaths and not player.post_plant_errors and not player.valid_entry_sacrifices and not player.retake_errors:
-        return []
-    lines = []
-    lines.append("### 地图战术表现")
-    lines.append("")
-    lines.append(f"- 地图控制分: {player.map_control_score:.1f}")
-    lines.append(f"- 战术纪律分: {player.tactical_discipline_score:.1f}")
-    lines.append(f"- 关键区域白给: {player.key_area_deaths} 次")
-    lines.append(f"- 下包后纪律失误: {player.post_plant_errors} 次")
-    lines.append(f"- 有效进点牺牲: {player.valid_entry_sacrifices} 次")
-    lines.append(f"- 回防纪律失误: {player.retake_errors} 次")
-    lines.append("")
-    if player.positive_tactical_events:
-        lines.append("代表性正面战术行为：")
-        for ev in player.positive_tactical_events[:3]:
-            round_id = ev.get("round", "?")
-            reason = ev.get("reason", "")
-            area_cn = ev.get("area_cn") or ev.get("area") or ""
-            phase = ev.get("phase", "")
-            lines.append(f"- 第 {round_id} 回合：{reason}")
-        lines.append("")
-    if player.negative_tactical_events:
-        lines.append("代表性负面战术行为：")
-        for ev in player.negative_tactical_events[:3]:
-            round_id = ev.get("round", "?")
-            reason = ev.get("reason", "")
-            area_cn = ev.get("area_cn") or ev.get("area") or ""
-            phase = ev.get("phase", "")
-            lines.append(f"- 第 {round_id} 回合：{reason}")
-        lines.append("")
-    return lines
-
-
 def get_player_summary(player: PlayerMatchImpact) -> str:
     """Generate a brief summary for a player."""
     rating = player.rating_0_100
-    
-    # Count rounds on each side
-    ct_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "CT")
-    t_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "T")
-    side_info = f"CT: {ct_rounds}  T: {t_rounds}"
+    team = "CT" if player.team == "team1" else "T"
 
     if rating >= 80:
         verdict = "表现出色"
@@ -409,7 +370,7 @@ def get_player_summary(player: PlayerMatchImpact) -> str:
     assists = sum(len(ri.deaths) for ri in player.round_impacts) - deaths
 
     summary = (
-        f"{player.player_name}（{side_info}）"
+        f"{player.player_name}（{team}方）"
         f"评分: {rating:.0f}/100\n"
         f"KDA: {kills}/{deaths}/{assists}  "
         f"高影响回合: {player.high_impact_rounds}  "
@@ -422,19 +383,18 @@ def get_player_summary(player: PlayerMatchImpact) -> str:
 def generate_player_report(player: PlayerMatchImpact) -> str:
     """Generate detailed Chinese report for a player."""
     rating = player.rating_0_100
-    
-    # Count rounds on each side
-    ct_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "CT")
-    t_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "T")
-    side_info = f"CT: {ct_rounds}  T: {t_rounds}"
+    team = "CT" if player.team == "team1" else "T"
 
     lines = []
-    lines.append(f"# {player.player_name}（{side_info}）")
+    lines.append(f"# {player.player_name}（{team}方）")
     lines.append("")
     lines.append(f"## 综合评分: {rating:.0f} / 100")
     lines.append("")
 
-    lines.append(f"**规则质量分**: {player.rule_quality_score:.1f}")
+    model_score = player.model_impact_score
+    rule_score = player.rule_quality_score
+    lines.append(f"**模型影响分**: {model_score:.1f}")
+    lines.append(f"**规则质量分**: {rule_score:.1f}")
     lines.append("")
 
     kills, deaths, _ = player.kda
@@ -474,8 +434,6 @@ def generate_player_report(player: PlayerMatchImpact) -> str:
     lines.extend(generate_smoke_quality_section(player))
     lines.extend(generate_fire_quality_section(player))
     lines.extend(generate_he_quality_section(player))
-    lines.extend(generate_tactical_section(player))
-    lines.extend(generate_timeline_markdown(player))
 
     if player.positive_kill_events or player.negative_death_events:
         lines.append("### 关键正面行为")
@@ -647,11 +605,9 @@ def generate_match_report(report: ImpactReport) -> str:
 
     lines.append("## 评分说明")
     lines.append("")
-    lines.append("- **综合评分 (0-100)**: 局内相对评分，基于平均回合影响、道具、补枪、死亡质量和战术纪律综合计算。当前不输出绝对 0/100，避免未校准阶段的极端评分。")
-    lines.append("- **基础评分**: 基于所有选手平均回合影响的 z-score 归一化到 50 ± 24 范围")
-    lines.append("- **加成项**: 高影响回合(+0.6)、补枪(+0.4)、合理高风险死亡(+0.1)")
-    lines.append("- **惩罚项**: 失误回合(-0.8)、自造风险死亡(-1.0)、下包后乱peek(-0.8)")
-    lines.append("- **道具修正**: 道具总影响 ±6 范围 × 0.35，战术纪律分数 ±8 范围 × 0.4")
+    lines.append("- **综合评分 (0-100)**: 结合模型影响分(65%)和规则质量分(35%)")
+    lines.append("- **模型影响分**: 基于RWI(回合胜率影响)、Hard Duel Win、Easy Duel Loss等")
+    lines.append("- **规则质量分**: 基于补枪、白给死亡、自造风险、目标行为等")
     lines.append("")
 
     lines.append("## 选手评分")
@@ -685,11 +641,6 @@ def generate_match_report(report: ImpactReport) -> str:
     lines.append("---")
     lines.append("")
 
-    lines.extend(generate_match_timeline_markdown(report))
-
-    lines.append("---")
-    lines.append("")
-
     lines.append("# 详细分析")
     lines.append("")
 
@@ -712,16 +663,15 @@ def generate_match_report(report: ImpactReport) -> str:
 def generate_summary_table(report: ImpactReport) -> str:
     """Generate a summary table for all players."""
     lines = []
-    lines.append("| 选手 | CT回合 | T回合 | 评分 | 模型分 | 规则分 | K | D | 首杀 | 补枪 | 白给 | 自造风险 | Hard Duel | Easy Duel |")
-    lines.append("|------|------|------|------|--------|--------|---|---|------|------|------|---------|-----------|-----------|")
+    lines.append("| 选手 | 阵营 | 评分 | 模型分 | 规则分 | K | D | 首杀 | 补枪 | 白给 | 自造风险 | Hard Duel | Easy Duel |")
+    lines.append("|------|------|------|--------|--------|---|---|------|------|------|---------|-----------|-----------|")
 
     for player in sorted(report.player_impacts, key=lambda p: p.rating_0_100, reverse=True):
-        ct_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "CT")
-        t_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "T")
+        team = "CT" if player.team == "team1" else "T"
         kills, deaths, _ = player.kda
 
         lines.append(
-            f"| {player.player_name} | {ct_rounds} | {t_rounds} | "
+            f"| {player.player_name} | {team} | "
             f"{player.rating_0_100:.0f} | "
             f"{player.model_impact_score:.1f} | "
             f"{player.rule_quality_score:.1f} | "
@@ -746,38 +696,38 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
         "match_winner": report.match_winner,
         "confidence": report.confidence,
         "warnings": report.warnings,
-        "utility_diagnostics": report.utility_diagnostics,
         "players": [],
     }
 
+    # Compute report-level diagnostics
+    model_impact_clip_count_min = sum(
+        1 for p in report.player_impacts if p.model_impact_score_raw < -50
+    )
+    model_impact_clip_count_max = sum(
+        1 for p in report.player_impacts if p.model_impact_score_raw > 50
+    )
+    rating_zero_count = sum(1 for p in report.player_impacts if p.rating_0_100 <= 0.0)
+    rating_hundred_count = sum(1 for p in report.player_impacts if p.rating_0_100 >= 100.0)
+
+    result["diagnostics"] = {
+        "model_impact_clip_count_min": model_impact_clip_count_min,
+        "model_impact_clip_count_max": model_impact_clip_count_max,
+        "rating_zero_count": rating_zero_count,
+        "rating_hundred_count": rating_hundred_count,
+    }
+
+    total_players = len(report.player_impacts)
+    if total_players > 0 and (model_impact_clip_count_min + model_impact_clip_count_max) / total_players > 0.3:
+        if "model_impact_score appears heavily clipped; rating calibration may need adjustment." not in report.warnings:
+            result["warnings"].append("model_impact_score appears heavily clipped; rating calibration may need adjustment.")
+
     for player in report.player_impacts:
-        ct_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "CT")
-        t_rounds = sum(1 for ri in player.round_impacts if ri.player_side == "T")
         player_data = {
             "player_name": player.player_name,
             "team": player.team,
-            "ct_rounds": ct_rounds,
-            "t_rounds": t_rounds,
             "rating_0_100": round(player.rating_0_100, 1),
-            "rating_components": player.rating_components,
             "model_impact_score": round(player.model_impact_score, 2),
             "rule_quality_score": round(player.rule_quality_score, 2),
-            "avg_round_impact": round(player.avg_round_impact, 3),
-            "total_round_impact": round(player.total_round_impact, 3),
-            "model_impact_score_raw": round(player.model_impact_score_raw, 3),
-            "model_impact_score_clipped": round(player.model_impact_score_clipped, 3),
-            "rule_quality_score_raw": round(player.rule_quality_score_raw, 3),
-            "kill_impact_total": round(player.kill_impact_total, 3),
-            "death_impact_total": round(player.death_impact_total, 3),
-            "flash_score": round(player.flash_score, 2),
-            "smoke_score": round(player.smoke_score, 2),
-            "fire_score": round(player.fire_score, 2),
-            "he_score": round(player.he_score, 2),
-            "utility_impact": round(sum(ri.utility_impact for ri in player.round_impacts), 2),
-            "utility_event_count": sum(
-                len(ri.flash_events) + len(ri.smoke_events) + len(ri.fire_events) + len(ri.he_events)
-                for ri in player.round_impacts
-            ),
             "kda": {
                 "kills": player.kda[0],
                 "deaths": player.kda[1],
@@ -848,20 +798,6 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
                     "low_value_hes": player.low_value_hes,
                     "harmful_hes": player.harmful_hes,
                 },
-                "tactical": {
-                    "map_control_score": round(player.map_control_score, 2),
-                    "tactical_discipline_score": round(player.tactical_discipline_score, 2),
-                    "raw_map_control_score": round(player.raw_map_control_score, 2),
-                    "clipped_map_control_score": round(player.clipped_map_control_score, 2),
-                    "raw_tactical_discipline_score": round(player.raw_tactical_discipline_score, 2),
-                    "clipped_tactical_discipline_score": round(player.clipped_tactical_discipline_score, 2),
-                    "key_area_deaths": player.key_area_deaths,
-                    "post_plant_errors": player.post_plant_errors,
-                    "valid_entry_sacrifices": player.valid_entry_sacrifices,
-                    "retake_errors": player.retake_errors,
-                    "positive_tactical_events": player.positive_tactical_events[:10],
-                    "negative_tactical_events": player.negative_tactical_events[:10],
-                },
             },
             "flash_events": [
                 {
@@ -924,7 +860,16 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
             ],
             "positive_events": player.positive_kill_events[:5],
             "negative_events": player.negative_death_events[:5],
-            "timeline": generate_player_timeline(player),
+            "diagnostics": {
+                "avg_round_impact": round(player.avg_round_impact, 2),
+                "total_round_impact": round(player.total_round_impact, 2),
+                "model_impact_score_raw": round(player.model_impact_score_raw, 2),
+                "model_impact_score_clipped": round(player.model_impact_score_clipped, 2),
+                "rule_quality_score_raw": round(player.rule_quality_score_raw, 2),
+                "rule_quality_score_clipped": round(player.rule_quality_score_clipped, 2),
+                "kill_impact_total": round(player.kill_impact_total, 2),
+                "death_impact_total": round(player.death_impact_total, 2),
+            },
         }
         result["players"].append(player_data)
 

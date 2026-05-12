@@ -56,6 +56,14 @@ def safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def safe_int(value: Any, default: int = 0) -> int:
+    """Safely convert a value to int."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def build_prediction_tick(tick_data: dict[str, Any]) -> PredictionTick:
     """Build a PredictionTick from tick data."""
     return PredictionTick(
@@ -70,98 +78,89 @@ def build_prediction_tick(tick_data: dict[str, Any]) -> PredictionTick:
         bomb_planted_time=safe_float(tick_data.get("bomb_planted_time")),
         projectiles=tick_data.get("projectiles") or [],
         entity_grenades=tick_data.get("entity_grenades") or [],
-        future_damage=tick_data.get("future_damage") or [],
         future_kills=tick_data.get("future_kills") or [],
+        future_damage=tick_data.get("future_damage") or [],
         bomb_position=tick_data.get("bomb_position"),
     )
 
 
-def extract_kill_events(
-    round_data: dict[str, Any],
-    team1_players: list[str],
-    team2_players: list[str],
-    team1_on_ct: bool = True
-) -> list[GameEvent]:
-    """Extract kill events from round data."""
-    events = []
-    kills = round_data.get("kills", [])
-    for kill in kills:
-        killer = kill.get("killer", "")
-        victim = kill.get("victim", "")
-        if not killer or not victim:
-            continue
-
-        # 根据 team1_on_ct 正确判断 CT/T
-        killer_is_team1 = killer in team1_players
-        if team1_on_ct:
-            attacker_team = "CT" if killer_is_team1 else "T"
-        else:
-            attacker_team = "T" if killer_is_team1 else "CT"
-
-        event = GameEvent(
-            event_type=EventType.KILL,
-            tick=safe_float(kill.get("round_seconds", 0.0)),
-            player=killer,
-            other_player=victim,
-            weapon=kill.get("weapon"),
-            assister=kill.get("assister"),
-            headshot=bool(kill.get("headshot", False)),
-            assisted_flash=bool(kill.get("assistedflash", False)),
-            attacker_blind=bool(kill.get("attackerblind", False)),
-            attacker_in_air=bool(kill.get("attackerinair", False)),
-            through_smoke=bool(kill.get("thrusmoke", False)),
-            damage_health=safe_int(kill.get("dmg_health")),
-            team_num=attacker_team,
-        )
-        events.append(event)
-
-        # 死亡事件的 team_num 也同样处理
-        victim_is_team1 = victim in team1_players
-        if team1_on_ct:
-            victim_team = "CT" if victim_is_team1 else "T"
-        else:
-            victim_team = "T" if victim_is_team1 else "CT"
-
-        death_event = GameEvent(
-            event_type=EventType.DEATH,
-            tick=safe_float(kill.get("round_seconds", 0.0)),
-            player=victim,
-            other_player=killer,
-            weapon=kill.get("weapon"),
-            team_num=victim_team,
-        )
-        events.append(death_event)
-
-    return events
+def _normalize_weapon_name(weapon: str | None) -> str | None:
+    """Normalize weapon name for consistent matching."""
+    if not weapon:
+        return None
+    return (
+        str(weapon)
+        .strip()
+        .lower()
+        .replace("weapon_", "")
+        .replace(" ", "")
+        .replace("_", "")
+    )
 
 
-def extract_bomb_plant_events(
-    round_data: dict[str, Any],
-    team1_players: list[str],
-    team2_players: list[str]
-) -> list[GameEvent]:
-    """Extract bomb plant events from round data."""
-    events = []
-    ticks = round_data.get("ticks", [])
-    team1_on_ct = round_data.get("team1_on_ct", True)
+def is_he_weapon(value: str | None) -> bool:
+    """Check if a weapon value is an HE grenade."""
+    w = _normalize_weapon_name(value)
+    if not w:
+        return False
 
-    for tick in ticks:
-        if tick.get("is_bomb_planted") and tick.get("bomb_planted_time") is not None:
-            plant_time = safe_float(tick.get("bomb_planted_time"))
-            if plant_time > 0:
-                is_team1 = team1_on_ct
-                planter_team = team1_players if is_team1 else team2_players
+    he_names = {
+        "he",
+        "hegrenade",
+        "highexplosivegrenade",
+    }
 
-                if tick.get("bomb_position"):
-                    events.append(GameEvent(
-                        event_type=EventType.BOMB_PLANT,
-                        tick=plant_time,
-                        player="unknown",
-                        team_num="T",
-                    ))
-                break
+    if w in he_names:
+        return True
 
-    return events
+    exclude = {
+        "flashbang",
+        "smokegrenade",
+        "smoke",
+        "molotov",
+        "incendiary",
+        "incgrenade",
+        "inferno",
+        "firebomb",
+        "fire",
+        "decoy",
+    }
+    if w in exclude:
+        return False
+
+    return False
+
+
+def is_fire_weapon(value: str | None) -> bool:
+    """Check if a weapon value is a fire weapon."""
+    w = _normalize_weapon_name(value)
+    if not w:
+        return False
+
+    fire_names = {
+        "molotov",
+        "incendiary",
+        "incgrenade",
+        "inferno",
+        "firebomb",
+    }
+
+    if w in fire_names:
+        return True
+
+    exclude = {
+        "smokegrenade",
+        "smoke",
+        "flashbang",
+        "hegrenade",
+        "he",
+        "highexplosivegrenade",
+        "decoy",
+    }
+    if w in exclude:
+        return False
+
+    return False
 
 
 def first_present(data: dict[str, Any], keys: list[str], default: Any = None) -> Any:
@@ -172,7 +171,12 @@ def first_present(data: dict[str, Any], keys: list[str], default: Any = None) ->
     return default
 
 
-def extract_damage_events(round_data: dict[str, Any]) -> list[GameEvent]:
+def extract_damage_events(
+    round_data: dict[str, Any],
+    team1_players: list[str] | None = None,
+    team2_players: list[str] | None = None,
+    team1_on_ct: bool = True,
+) -> list[GameEvent]:
     """Extract damage events from per-tick future_damage payloads with strict dedup."""
     events: list[GameEvent] = []
     seen: set[tuple[float, str, str, str, int]] = set()
@@ -203,7 +207,12 @@ def extract_damage_events(round_data: dict[str, Any]) -> list[GameEvent]:
     return events
 
 
-def extract_future_kill_events(round_data: dict[str, Any]) -> list[GameEvent]:
+def extract_future_kill_events(
+    round_data: dict[str, Any],
+    team1_players: list[str] | None = None,
+    team2_players: list[str] | None = None,
+    team1_on_ct: bool = True,
+) -> list[GameEvent]:
     """Extract low-confidence kill-like events from per-tick future_kills payloads."""
     existing = {
         (
@@ -239,12 +248,86 @@ def extract_future_kill_events(round_data: dict[str, Any]) -> list[GameEvent]:
     return events
 
 
-def safe_int(value: Any, default: int = 0) -> int:
-    """Safely convert a value to int."""
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
+def extract_kill_events(
+    round_data: dict[str, Any],
+    team1_players: list[str],
+    team2_players: list[str],
+    team1_on_ct: bool = True
+) -> list[GameEvent]:
+    """Extract kill events from round data."""
+    events = []
+    kills = round_data.get("kills", [])
+    for kill in kills:
+        killer = kill.get("killer", "")
+        victim = kill.get("victim", "")
+        if not killer or not victim:
+            continue
+
+        killer_is_team1 = killer in team1_players
+        if team1_on_ct:
+            attacker_team = "CT" if killer_is_team1 else "T"
+        else:
+            attacker_team = "T" if killer_is_team1 else "CT"
+
+        event = GameEvent(
+            event_type=EventType.KILL,
+            tick=safe_float(kill.get("round_seconds", 0.0)),
+            player=killer,
+            other_player=victim,
+            weapon=kill.get("weapon"),
+            assister=kill.get("assister"),
+            headshot=bool(kill.get("headshot", False)),
+            assisted_flash=bool(kill.get("assistedflash", False)),
+            attacker_blind=bool(kill.get("attackerblind", False)),
+            attacker_in_air=bool(kill.get("attackerinair", False)),
+            through_smoke=bool(kill.get("thrusmoke", False)),
+            damage_health=safe_int(kill.get("dmg_health")),
+            team_num=attacker_team,
+        )
+        events.append(event)
+
+        victim_is_team1 = victim in team1_players
+        if team1_on_ct:
+            victim_team = "CT" if victim_is_team1 else "T"
+        else:
+            victim_team = "T" if victim_is_team1 else "CT"
+
+        death_event = GameEvent(
+            event_type=EventType.DEATH,
+            tick=safe_float(kill.get("round_seconds", 0.0)),
+            player=victim,
+            other_player=killer,
+            weapon=kill.get("weapon"),
+            team_num=victim_team,
+        )
+        events.append(death_event)
+
+    return events
+
+
+def extract_bomb_plant_events(
+    round_data: dict[str, Any],
+    team1_players: list[str],
+    team2_players: list[str]
+) -> list[GameEvent]:
+    """Extract bomb plant events from round data."""
+    events = []
+    ticks = round_data.get("ticks", [])
+
+    for tick in ticks:
+        if tick.get("is_bomb_planted") and tick.get("bomb_planted_time") is not None:
+            plant_time = safe_float(tick.get("bomb_planted_time"))
+            if plant_time > 0:
+                if tick.get("bomb_position"):
+                    events.append(GameEvent(
+                        event_type=EventType.BOMB_PLANT,
+                        tick=plant_time,
+                        player="unknown",
+                        team_num="T",
+                    ))
+                break
+
+    return events
 
 
 def build_round_context(
@@ -262,8 +345,8 @@ def build_round_context(
     events = []
     events.extend(extract_kill_events(round_data, team1_players, team2_players, team1_on_ct))
     events.extend(extract_bomb_plant_events(round_data, team1_players, team2_players))
-    events.extend(extract_damage_events(round_data))
-    events.extend(extract_future_kill_events(round_data))
+    events.extend(extract_damage_events(round_data, team1_players, team2_players, team1_on_ct))
+    events.extend(extract_future_kill_events(round_data, team1_players, team2_players, team1_on_ct))
 
     events.sort(key=lambda e: e.tick)
 
@@ -309,28 +392,19 @@ def get_player_side_win_rate(
     team1_players: list[str],
     team1_on_ct: bool
 ) -> float:
-    """Get win rate from player's perspective (own side = 1.0).
-    
-    Args:
-        win_rate: CT win rate
-        player_name: Player name
-        team1_players: List of team1 players
-        team1_on_ct: If True, team1 is playing as CT in this round
-    """
+    """Get win rate from player's perspective (own side = 1.0)."""
     player_on_team1 = player_name in team1_players
     
     if team1_on_ct:
-        # team1 is CT, team2 is T
         if player_on_team1:
-            return win_rate  # player is CT
+            return win_rate
         else:
-            return 1.0 - win_rate  # player is T
+            return 1.0 - win_rate
     else:
-        # team1 is T, team2 is CT
         if player_on_team1:
-            return 1.0 - win_rate  # player is T
+            return 1.0 - win_rate
         else:
-            return win_rate  # player is CT
+            return win_rate
 
 
 def find_death_trade_kill(

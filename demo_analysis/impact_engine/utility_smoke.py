@@ -276,11 +276,37 @@ def match_smoke_target(
     best: tuple[float, SmokeTarget] | None = None
     sx, sy, _ = smoke_event.position
     for target in map_knowledge.values():
-        radius = target.smoke_radius * get_weight("smoke_impact.target_match_radius_multiplier", 1.6)
+        radius = target.smoke_radius * get_weight("smoke_impact.target_match_radius_multiplier", 1.2)
         dist = calculate_distance_2d(sx, sy, target.target_center[0], target.target_center[1])
         if dist <= radius and (best is None or dist < best[0]):
             best = (dist, target)
     return best[1] if best else None
+
+
+def collect_smoke_target_diagnostics(
+    round_context: RoundContext,
+    map_knowledge: dict[str, SmokeTarget] | None = None,
+) -> tuple[dict[str, int], list[str]]:
+    """Collect smoke target match counts and detect overmatched targets.
+
+    Returns:
+        (target_match_counts, possible_overmatched_smoke_targets)
+    """
+    map_knowledge = map_knowledge or load_smoke_targets(round_context)
+    smoke_events = collect_smoke_events(round_context)
+    target_match_counts: dict[str, int] = {}
+    for smoke in smoke_events:
+        target = match_smoke_target(smoke, round_context, map_knowledge)
+        if target is not None:
+            target_match_counts[target.name] = target_match_counts.get(target.name, 0) + 1
+
+    total_smoke_events = len(smoke_events)
+    threshold = max(5, int(total_smoke_events * 0.30))
+    overmatched = [
+        name for name, count in target_match_counts.items()
+        if count > threshold
+    ]
+    return target_match_counts, overmatched
 
 
 def score_smoke_quality(
