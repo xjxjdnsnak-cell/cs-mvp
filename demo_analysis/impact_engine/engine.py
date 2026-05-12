@@ -39,6 +39,7 @@ from .utility_diagnostics import (
     empty_utility_diagnostics,
     merge_utility_diagnostics,
 )
+from .rating import normalize_player_ratings
 
 
 class ImpactEngine:
@@ -173,7 +174,13 @@ class ImpactEngine:
             player_impact_map[player] = updated
 
         player_impacts = list(player_impact_map.values())
+
+        rating_stats = normalize_player_ratings(player_impacts)
+        
         utility_diagnostics = add_score_extreme_diagnostics(utility_diagnostics, player_impacts)
+        if rating_stats:
+            utility_diagnostics.update(rating_stats)
+        
         clip_total = (
             utility_diagnostics.get("model_impact_clip_count_min", 0)
             + utility_diagnostics.get("model_impact_clip_count_max", 0)

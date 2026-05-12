@@ -347,6 +347,7 @@ class PlayerMatchImpact:
     kda: tuple[int, int, int] = (0, 0, 0)
     rating: float = 0.0
     rating_0_100: float = 0.0
+    rating_components: dict[str, Any] = field(default_factory=dict)
 
     confidence: str = "high"
 

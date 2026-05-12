@@ -648,9 +648,11 @@ def generate_match_report(report: ImpactReport) -> str:
 
     lines.append("## 评分说明")
     lines.append("")
-    lines.append("- **综合评分 (0-100)**: 结合模型影响分(65%)和规则质量分(35%)")
-    lines.append("- **模型影响分**: 基于RWI(回合胜率影响)、Hard Duel Win、Easy Duel Loss等")
-    lines.append("- **规则质量分**: 基于补枪、白给死亡、自造风险、目标行为等")
+    lines.append("- **综合评分 (0-100)**: 局内相对评分，基于平均回合影响、道具、补枪、死亡质量和战术纪律综合计算。当前不输出绝对 0/100，避免未校准阶段的极端评分。")
+    lines.append("- **基础评分**: 基于所有选手平均回合影响的 z-score 归一化到 50 ± 24 范围")
+    lines.append("- **加成项**: 高影响回合(+0.6)、补枪(+0.4)、合理高风险死亡(+0.1)")
+    lines.append("- **惩罚项**: 失误回合(-0.8)、自造风险死亡(-1.0)、下包后乱peek(-0.8)")
+    lines.append("- **道具修正**: 道具总影响 ±6 范围 × 0.35，战术纪律分数 ±8 范围 × 0.4")
     lines.append("")
 
     lines.append("## 选手评分")
@@ -753,6 +755,7 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
             "ct_rounds": ct_rounds,
             "t_rounds": t_rounds,
             "rating_0_100": round(player.rating_0_100, 1),
+            "rating_components": player.rating_components,
             "model_impact_score": round(player.model_impact_score, 2),
             "rule_quality_score": round(player.rule_quality_score, 2),
             "avg_round_impact": round(player.avg_round_impact, 3),
