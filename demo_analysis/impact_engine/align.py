@@ -1,5 +1,7 @@
 """Align game events with CS-NET tick predictions."""
 
+import bisect
+import statistics
 from typing import Any
 
 from .models import (
@@ -10,28 +12,69 @@ from .models import (
 )
 
 
+
+
+def estimate_tick_interval(ticks: list[PredictionTick], default: float = 1.0 / 64.0) -> float:
+    """Estimate sampling interval from median positive tick gaps."""
+    if len(ticks) < 2:
+        return default
+
+    sorted_seconds = sorted(t.round_seconds for t in ticks)
+    gaps = [b - a for a, b in zip(sorted_seconds, sorted_seconds[1:]) if (b - a) > 0]
+    if not gaps:
+        return default
+    return max(0.001, statistics.median(gaps))
+
+
+def _dynamic_tolerance(ticks: list[PredictionTick], base_min_tolerance: float = 0.01) -> float:
+    interval = estimate_tick_interval(ticks)
+    return max(1.5 * interval, base_min_tolerance)
+
+
+def _sorted_round_seconds(ticks: list[PredictionTick]) -> tuple[list[float], list[PredictionTick]]:
+    sorted_ticks = sorted(ticks, key=lambda t: t.round_seconds)
+    return [t.round_seconds for t in sorted_ticks], sorted_ticks
+
 def find_nearest_tick(ticks: list[PredictionTick], target_time: float) -> PredictionTick | None:
-    """Find the nearest tick to a target time."""
+    """Find the nearest tick to a target time using binary search."""
     if not ticks:
         return None
-    nearest = min(ticks, key=lambda t: abs(t.round_seconds - target_time))
-    return nearest
+    seconds, sorted_ticks = _sorted_round_seconds(ticks)
+    idx = bisect.bisect_left(seconds, target_time)
+    if idx <= 0:
+        return sorted_ticks[0]
+    if idx >= len(sorted_ticks):
+        return sorted_ticks[-1]
+    prev_tick = sorted_ticks[idx - 1]
+    next_tick = sorted_ticks[idx]
+    if abs(prev_tick.round_seconds - target_time) <= abs(next_tick.round_seconds - target_time):
+        return prev_tick
+    return next_tick
 
 
-def find_exact_tick(ticks: list[PredictionTick], target_time: float, tolerance: float = 0.02) -> PredictionTick | None:
-    """Find a tick that exactly matches target_time within tolerance.
-
-    For 64-tick servers, adjacent tick interval is ~0.016 seconds.
-    tolerance=0.02 ensures we find the exact tick or its immediate neighbor.
-
-    Falls back to find_nearest_tick() if no exact match found.
-    """
+def find_exact_tick(
+    ticks: list[PredictionTick],
+    target_time: float,
+    tolerance: float | None = None,
+) -> PredictionTick | None:
+    """Find a tick matching target_time within tolerance (dynamic by interval)."""
     if not ticks:
         return None
-    for tick in ticks:
-        if abs(tick.round_seconds - target_time) <= tolerance:
+
+    effective_tolerance = tolerance if tolerance is not None else _dynamic_tolerance(ticks)
+    seconds, sorted_ticks = _sorted_round_seconds(ticks)
+    idx = bisect.bisect_left(seconds, target_time)
+
+    candidates: list[PredictionTick] = []
+    if idx < len(sorted_ticks):
+        candidates.append(sorted_ticks[idx])
+    if idx > 0:
+        candidates.append(sorted_ticks[idx - 1])
+
+    for tick in sorted(candidates, key=lambda t: abs(t.round_seconds - target_time)):
+        if abs(tick.round_seconds - target_time) <= effective_tolerance:
             return tick
-    return find_nearest_tick(ticks, target_time)
+    return find_nearest_tick(sorted_ticks, target_time)
 
 
 def find_ticks_before(
