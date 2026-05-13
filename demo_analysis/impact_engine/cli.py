@@ -11,6 +11,7 @@ from .engine import ImpactEngine
 from .report import generate_match_report, report_to_json
 from .utility_diagnostics import collect_match_diagnostics, format_utility_diagnostics
 from .align import build_round_context
+from .event_evaluation import build_predicted_events, evaluate_event_samples
 
 
 def main():
@@ -53,6 +54,15 @@ def main():
         action="store_true",
         help="输出 utility diagnostics 信息"
     )
+    parser.add_argument(
+        "--eval-events",
+        action="store_true",
+        help="事件级评测模式：输出 KILL/DEATH/DAMAGE 指标、时间误差与误差归因"
+    )
+    parser.add_argument(
+        "--eval-events-out",
+        help="事件级评测 JSON 输出路径（可选）"
+    )
 
     args = parser.parse_args()
 
@@ -88,6 +98,22 @@ def main():
 
     engine = ImpactEngine(dashboard_payload)
     report = engine.analyze()
+
+    if args.eval_events:
+        team1_players = report.match_info.get("team1_players", [])
+        team2_players = report.match_info.get("team2_players", [])
+        samples = build_predicted_events(engine.rounds, team1_players, team2_players)
+        evaluation = evaluate_event_samples(samples)
+        text = json.dumps(evaluation, indent=2, ensure_ascii=False)
+        print("\n[Event Evaluation]")
+        print(text)
+        if args.eval_events_out:
+            eval_path = Path(args.eval_events_out)
+            eval_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(eval_path, "w", encoding="utf-8") as f:
+                f.write(text)
+            if not args.quiet:
+                print(f"事件级评测已保存: {eval_path}")
 
     if args.json_out:
         json_output = report_to_json(report)
