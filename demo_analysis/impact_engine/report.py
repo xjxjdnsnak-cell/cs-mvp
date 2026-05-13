@@ -796,11 +796,33 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
     rating_zero_count = sum(1 for p in report.player_impacts if p.rating_0_100 <= 0.0)
     rating_hundred_count = sum(1 for p in report.player_impacts if p.rating_0_100 >= 100.0)
 
+    alignment_stats = [
+        ri.alignment_diagnostics
+        for p in report.player_impacts
+        for ri in p.round_impacts
+        if ri.alignment_diagnostics
+    ]
+    exact_match_rate = (
+        sum(safe_float(stat.get("exact_match_rate"), 0.0) for stat in alignment_stats) / len(alignment_stats)
+        if alignment_stats else 0.0
+    )
+    fallback_rate = (
+        sum(safe_float(stat.get("fallback_rate"), 0.0) for stat in alignment_stats) / len(alignment_stats)
+        if alignment_stats else 0.0
+    )
+    avg_time_error = (
+        sum(safe_float(stat.get("avg_time_error"), 0.0) for stat in alignment_stats) / len(alignment_stats)
+        if alignment_stats else 0.0
+    )
+
     result["diagnostics"] = {
         "model_impact_clip_count_min": model_impact_clip_count_min,
         "model_impact_clip_count_max": model_impact_clip_count_max,
         "rating_zero_count": rating_zero_count,
         "rating_hundred_count": rating_hundred_count,
+        "exact_match_rate": exact_match_rate,
+        "fallback_rate": fallback_rate,
+        "avg_time_error": avg_time_error,
     }
 
     total_players = len(report.player_impacts)

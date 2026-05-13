@@ -1,5 +1,7 @@
 """Align game events with CS-NET tick predictions."""
 
+import bisect
+import statistics
 from typing import Any
 
 from .models import (
@@ -10,28 +12,69 @@ from .models import (
 )
 
 
+
+
+def estimate_tick_interval(ticks: list[PredictionTick], default: float = 1.0 / 64.0) -> float:
+    """Estimate sampling interval from median positive tick gaps."""
+    if len(ticks) < 2:
+        return default
+
+    sorted_seconds = sorted(t.round_seconds for t in ticks)
+    gaps = [b - a for a, b in zip(sorted_seconds, sorted_seconds[1:]) if (b - a) > 0]
+    if not gaps:
+        return default
+    return max(0.001, statistics.median(gaps))
+
+
+def _dynamic_tolerance(ticks: list[PredictionTick], base_min_tolerance: float = 0.01) -> float:
+    interval = estimate_tick_interval(ticks)
+    return max(1.5 * interval, base_min_tolerance)
+
+
+def _sorted_round_seconds(ticks: list[PredictionTick]) -> tuple[list[float], list[PredictionTick]]:
+    sorted_ticks = sorted(ticks, key=lambda t: t.round_seconds)
+    return [t.round_seconds for t in sorted_ticks], sorted_ticks
+
 def find_nearest_tick(ticks: list[PredictionTick], target_time: float) -> PredictionTick | None:
-    """Find the nearest tick to a target time."""
+    """Find the nearest tick to a target time using binary search."""
     if not ticks:
         return None
-    nearest = min(ticks, key=lambda t: abs(t.round_seconds - target_time))
-    return nearest
+    seconds, sorted_ticks = _sorted_round_seconds(ticks)
+    idx = bisect.bisect_left(seconds, target_time)
+    if idx <= 0:
+        return sorted_ticks[0]
+    if idx >= len(sorted_ticks):
+        return sorted_ticks[-1]
+    prev_tick = sorted_ticks[idx - 1]
+    next_tick = sorted_ticks[idx]
+    if abs(prev_tick.round_seconds - target_time) <= abs(next_tick.round_seconds - target_time):
+        return prev_tick
+    return next_tick
 
 
-def find_exact_tick(ticks: list[PredictionTick], target_time: float, tolerance: float = 0.02) -> PredictionTick | None:
-    """Find a tick that exactly matches target_time within tolerance.
-
-    For 64-tick servers, adjacent tick interval is ~0.016 seconds.
-    tolerance=0.02 ensures we find the exact tick or its immediate neighbor.
-
-    Falls back to find_nearest_tick() if no exact match found.
-    """
+def find_exact_tick(
+    ticks: list[PredictionTick],
+    target_time: float,
+    tolerance: float | None = None,
+) -> PredictionTick | None:
+    """Find a tick matching target_time within tolerance (dynamic by interval)."""
     if not ticks:
         return None
-    for tick in ticks:
-        if abs(tick.round_seconds - target_time) <= tolerance:
+
+    effective_tolerance = tolerance if tolerance is not None else _dynamic_tolerance(ticks)
+    seconds, sorted_ticks = _sorted_round_seconds(ticks)
+    idx = bisect.bisect_left(seconds, target_time)
+
+    candidates: list[PredictionTick] = []
+    if idx < len(sorted_ticks):
+        candidates.append(sorted_ticks[idx])
+    if idx > 0:
+        candidates.append(sorted_ticks[idx - 1])
+
+    for tick in sorted(candidates, key=lambda t: abs(t.round_seconds - target_time)):
+        if abs(tick.round_seconds - target_time) <= effective_tolerance:
             return tick
-    return find_nearest_tick(ticks, target_time)
+    return find_nearest_tick(sorted_ticks, target_time)
 
 
 def find_ticks_before(
@@ -241,6 +284,23 @@ def first_present(data: dict[str, Any], keys: list[str], default: Any = None) ->
     return default
 
 
+def _estimate_tick_interval(round_data: dict[str, Any]) -> float:
+    """Estimate tick interval from round ticks; fallback to 64-tick interval."""
+    tick_times = sorted(
+        safe_float(tick.get("round_seconds", 0.0))
+        for tick in round_data.get("ticks", [])
+        if tick.get("round_seconds") is not None
+    )
+    gaps = [b - a for a, b in zip(tick_times, tick_times[1:]) if b - a > 0]
+    return min(gaps) if gaps else (1.0 / 64.0)
+
+
+def _damage_time_bucket(damage_time: float, interval: float) -> int:
+    if interval <= 0:
+        interval = 1.0 / 64.0
+    return int(round(damage_time / interval))
+
+
 def extract_damage_events(
     round_data: dict[str, Any],
     team1_players: list[str] | None = None,
@@ -249,7 +309,9 @@ def extract_damage_events(
 ) -> list[GameEvent]:
     """Extract damage events from per-tick future_damage payloads with strict dedup."""
     events: list[GameEvent] = []
-    seen: set[tuple[float, str, str, str, int]] = set()
+    tick_interval = _estimate_tick_interval(round_data)
+    seen: set[tuple[Any, ...]] = set()
+    merged_dot: dict[tuple[Any, ...], int] = {}
     for tick in round_data.get("ticks", []):
         for damage in tick.get("future_damage") or []:
             damage_time = safe_float(
@@ -262,8 +324,36 @@ def extract_damage_events(
             damage_health = safe_int(first_present(damage, ["dmg_health", "damage_health", "damage"], 0))
             if not attacker or not victim:
                 continue
-            key = (round(damage_time, 3), str(attacker), str(victim), str(weapon or ""), damage_health)
-            if key in seen:
+            attacker_steamid = first_present(damage, ["attacker_steamid", "attacker_steam_id"], None)
+            victim_steamid = first_present(damage, ["victim_steamid", "victim_steam_id", "user_steamid"], None)
+            armor_damage = safe_int(first_present(damage, ["dmg_armor", "armor_damage"], 0))
+            hitgroup = first_present(damage, ["hitgroup", "hit_group"], None)
+            tick_id = first_present(damage, ["tick_id", "tick", "event_tick"], None)
+            time_bucket = _damage_time_bucket(damage_time, tick_interval)
+            key = (
+                time_bucket,
+                str(attacker_steamid) if attacker_steamid else str(attacker),
+                str(victim_steamid) if victim_steamid else str(victim),
+                str(weapon or ""),
+                damage_health,
+                armor_damage,
+                str(hitgroup or ""),
+                int(tick_id) if tick_id is not None else None,
+            )
+            normalized_weapon = _normalize_weapon_name(weapon)
+            is_dot = is_he_weapon(normalized_weapon) or is_fire_weapon(normalized_weapon)
+            if is_dot:
+                dot_key = (
+                    str(attacker_steamid) if attacker_steamid else str(attacker),
+                    str(victim_steamid) if victim_steamid else str(victim),
+                    str(weapon or ""),
+                    str(hitgroup or ""),
+                )
+                prev_bucket = merged_dot.get(dot_key)
+                if prev_bucket is not None and abs(time_bucket - prev_bucket) <= 2:
+                    continue
+                merged_dot[dot_key] = time_bucket
+            elif key in seen:
                 continue
             seen.add(key)
             events.append(GameEvent(

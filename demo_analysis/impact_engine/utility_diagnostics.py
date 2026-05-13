@@ -41,7 +41,10 @@ INT_DIAGNOSTIC_KEYS = [
     "raw_future_damage_entries",
     "unique_damage_events_after_dedup",
     "duplicate_damage_events_removed",
+    "damage_raw_count",
+    "damage_dedup_count",
 ]
+FLOAT_DIAGNOSTIC_KEYS = ["dedup_ratio"]
 
 DICT_DIAGNOSTIC_KEYS = [
     "round_event_type_counts",
@@ -180,6 +183,7 @@ def collect_round_diagnostics(round_context: RoundContext) -> dict[str, Any]:
 def empty_utility_diagnostics() -> dict[str, Any]:
     """Return the flat diagnostics shape expected by ImpactEngine."""
     diagnostics: dict[str, Any] = {key: 0 for key in INT_DIAGNOSTIC_KEYS}
+    diagnostics.update({key: 0.0 for key in FLOAT_DIAGNOSTIC_KEYS})
     diagnostics.update({key: {} for key in DICT_DIAGNOSTIC_KEYS})
     diagnostics.update({key: [] for key in LIST_DIAGNOSTIC_KEYS})
     return diagnostics
@@ -259,6 +263,8 @@ def merge_utility_diagnostics(base: dict[str, Any], update: dict[str, Any]) -> d
     for source in (base, update):
         for key in INT_DIAGNOSTIC_KEYS:
             merged[key] = int(merged.get(key, 0)) + int(source.get(key, 0) or 0)
+        for key in FLOAT_DIAGNOSTIC_KEYS:
+            merged[key] = float(merged.get(key, 0.0)) + float(source.get(key, 0.0) or 0.0)
         for key in DICT_DIAGNOSTIC_KEYS:
             counter = Counter(merged.get(key, {}))
             counter.update(source.get(key, {}) or {})
@@ -558,7 +564,7 @@ def _count_weapon_matches(round_context: RoundContext, predicate: Any) -> int:
     return count
 
 
-def _damage_dedup_stats(round_context: RoundContext) -> dict[str, int]:
+def _damage_dedup_stats(round_context: RoundContext) -> dict[str, int | float]:
     raw_future_damage = sum(len(tick.future_damage) for tick in round_context.ticks)
     seen: set[tuple[float, str, str, str, int]] = set()
     for event in round_context.events:
@@ -582,10 +588,14 @@ def _damage_dedup_stats(round_context: RoundContext) -> dict[str, int]:
             ))
     unique_count = len(seen)
     raw_total = raw_future_damage + sum(1 for event in round_context.events if event.event_type == EventType.DAMAGE)
+    dedup_ratio = (unique_count / raw_total) if raw_total > 0 else 1.0
     return {
         "raw_future_damage_entries": raw_future_damage,
         "unique_damage_events_after_dedup": unique_count,
         "duplicate_damage_events_removed": max(0, raw_total - unique_count),
+        "damage_raw_count": raw_total,
+        "damage_dedup_count": unique_count,
+        "dedup_ratio": dedup_ratio,
     }
 
 
