@@ -125,6 +125,32 @@ class TestExtractDamageEvents(unittest.TestCase):
         events = extract_damage_events(round_data, ["Player1"], ["Player2"])
         self.assertEqual(len(events), 0)
 
+    def test_dedup_key_uses_extended_fields(self):
+        round_data = {
+            "ticks": [{
+                "round_seconds": 10.0,
+                "future_damage": [
+                    {"attacker_name": "A", "victim_name": "E", "time": 10.5, "weapon": "ak47", "damage": 35, "hitgroup": "chest"},
+                    {"attacker_name": "A", "victim_name": "E", "time": 10.5, "weapon": "ak47", "damage": 35, "hitgroup": "head"},
+                ],
+            }]
+        }
+        events = extract_damage_events(round_data, ["A"], ["E"])
+        self.assertEqual(len(events), 2)
+
+    def test_fire_damage_uses_short_window_merge(self):
+        round_data = {
+            "ticks": [{
+                "round_seconds": 10.0,
+                "future_damage": [
+                    {"attacker_name": "A", "victim_name": "E", "time": 10.50, "weapon": "molotov", "damage": 4},
+                    {"attacker_name": "A", "victim_name": "E", "time": 10.51, "weapon": "molotov", "damage": 4},
+                ],
+            }]
+        }
+        events = extract_damage_events(round_data, ["A"], ["E"])
+        self.assertEqual(len(events), 1)
+
 
 class TestExtractFutureKillEvents(unittest.TestCase):
     """Test extract_future_kill_events function."""

@@ -310,6 +310,9 @@ class TestUtilityDiagnostics(unittest.TestCase):
         self.assertEqual(diagnostics["raw_future_damage_entries"], 4)
         self.assertEqual(diagnostics["unique_damage_events_after_dedup"], 1)
         self.assertEqual(diagnostics["duplicate_damage_events_removed"], 3)
+        self.assertEqual(diagnostics["damage_raw_count"], 4)
+        self.assertEqual(diagnostics["damage_dedup_count"], 1)
+        self.assertAlmostEqual(diagnostics["dedup_ratio"], 0.25)
 
     def test_utility_debug_does_not_change_report_json(self):
         player = PlayerMatchImpact(
