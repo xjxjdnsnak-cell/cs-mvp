@@ -2,6 +2,14 @@
 
 from typing import Any
 
+import os
+from pathlib import Path
+
+try:
+    import yaml
+except Exception:  # pragma: no cover
+    yaml = None
+
 
 FLASH_THRESHOLDS = {
     "ignore": 0.7,
@@ -224,7 +232,36 @@ IMPACT_WEIGHTS = {
 
 
 def get_weight(path: str, default: Any = None) -> Any:
-    """Get a weight value by dot-notation path."""
+    """Get a weight value by dot-notation path.
+
+    Lookup order: map+phase layered config -> global layered config -> built-in IMPACT_WEIGHTS.
+    """
+    layered = _load_layered_config()
+    map_name = _CONTEXT.get("map_name")
+    phase = _CONTEXT.get("phase")
+
+    if map_name and phase:
+        scoped = _nested_get(layered, f"maps.{map_name}.{phase}")
+        if isinstance(scoped, dict):
+            alias_map = {
+                "kill_impact.trade_window_seconds": "trade_window_seconds",
+                "duel_thresholds.hard_duel_win_max_prob": "hard_duel_win_max_prob",
+                "align.tolerance_seconds": "align_tolerance_seconds",
+            }
+            alias_key = alias_map.get(path)
+            if alias_key in scoped:
+                return scoped[alias_key]
+
+    global_cfg = layered.get("global", {}) if isinstance(layered, dict) else {}
+    alias_map = {
+        "kill_impact.trade_window_seconds": "trade_window_seconds",
+        "duel_thresholds.hard_duel_win_max_prob": "hard_duel_win_max_prob",
+        "align.tolerance_seconds": "align_tolerance_seconds",
+    }
+    alias_key = alias_map.get(path)
+    if alias_key and alias_key in global_cfg:
+        return global_cfg[alias_key]
+
     keys = path.split(".")
     value = IMPACT_WEIGHTS
     for key in keys:
@@ -233,6 +270,38 @@ def get_weight(path: str, default: Any = None) -> Any:
         else:
             return default
     return value
+
+
+_CONTEXT = {"map_name": None, "phase": None}
+_LAYERED_CACHE = None
+
+
+def set_context(map_name: str | None = None, phase: str | None = None) -> None:
+    """Set optional map/phase context for layered threshold lookup."""
+    _CONTEXT["map_name"] = map_name
+    _CONTEXT["phase"] = phase
+
+
+def _nested_get(data: dict[str, Any], path: str) -> Any:
+    value: Any = data
+    for key in path.split('.'):
+        if isinstance(value, dict) and key in value:
+            value = value[key]
+        else:
+            return None
+    return value
+
+
+def _load_layered_config() -> dict[str, Any]:
+    global _LAYERED_CACHE
+    if _LAYERED_CACHE is not None:
+        return _LAYERED_CACHE
+    cfg_path = Path(os.getenv("IMPACT_LAYERED_CONFIG", "config/impact_thresholds.yaml"))
+    if yaml is None or not cfg_path.exists():
+        _LAYERED_CACHE = {}
+    else:
+        _LAYERED_CACHE = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    return _LAYERED_CACHE
 
 
 def get_threshold(category: str, name: str) -> float:
