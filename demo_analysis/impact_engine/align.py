@@ -64,6 +64,60 @@ def find_ticks_after(
     return result
 
 
+def _find_nearest_full_tick(full_ticks: list[dict[str, Any]], target_time: float) -> dict[str, Any] | None:
+    """Find the nearest full tick to a target time."""
+    if not full_ticks:
+        return None
+    return min(full_ticks, key=lambda t: abs(t["round_seconds"] - target_time))
+
+
+def find_nearest_tick_via_full(
+    full_ticks: list[dict[str, Any]],
+    prediction_ticks: list[PredictionTick],
+    target_time: float,
+) -> PredictionTick | None:
+    """Find nearest tick using full_ticks for precise alignment, then map to PredictionTick."""
+    if not full_ticks:
+        return find_nearest_tick(prediction_ticks, target_time)
+    nearest_full = _find_nearest_full_tick(full_ticks, target_time)
+    if nearest_full is None:
+        return find_nearest_tick(prediction_ticks, target_time)
+    return find_nearest_tick(prediction_ticks, nearest_full["round_seconds"])
+
+
+def find_exact_tick_via_full(
+    full_ticks: list[dict[str, Any]],
+    prediction_ticks: list[PredictionTick],
+    target_time: float,
+    tolerance: float = 0.02,
+) -> PredictionTick | None:
+    """Find exact tick using full_ticks for precise alignment, then map to PredictionTick."""
+    if not full_ticks:
+        return find_exact_tick(prediction_ticks, target_time, tolerance)
+    for ft in full_ticks:
+        if abs(ft["round_seconds"] - target_time) <= tolerance:
+            return find_exact_tick(prediction_ticks, ft["round_seconds"], tolerance)
+    nearest_full = _find_nearest_full_tick(full_ticks, target_time)
+    if nearest_full is None:
+        return find_nearest_tick(prediction_ticks, target_time)
+    return find_nearest_tick(prediction_ticks, nearest_full["round_seconds"])
+
+
+def find_ticks_before_via_full(
+    full_ticks: list[dict[str, Any]],
+    prediction_ticks: list[PredictionTick],
+    target_time: float,
+    max_seconds: float = 10.0,
+) -> list[PredictionTick]:
+    """Find ticks before target_time using full_ticks for precise boundary."""
+    if not full_ticks:
+        return find_ticks_before(prediction_ticks, target_time, max_seconds)
+    nearest_full = _find_nearest_full_tick(full_ticks, target_time)
+    if nearest_full is None:
+        return find_ticks_before(prediction_ticks, target_time, max_seconds)
+    return find_ticks_before(prediction_ticks, nearest_full["round_seconds"], max_seconds)
+
+
 def safe_float(value: Any, default: float = 0.0) -> float:
     """Safely convert a value to float."""
     try:
@@ -364,14 +418,15 @@ def build_round_context(
     team2_players: list[str]
 ) -> RoundContext:
     """Build a RoundContext from round data."""
-    full_ticks = round_data.get("full_ticks")
+    full_ticks_raw = round_data.get("full_ticks")
     ticks = round_data.get("ticks", [])
 
-    # full_ticks may be raw tick numbers (int list) or formatted tick dicts
-    if full_ticks and isinstance(full_ticks[0], dict):
-        prediction_ticks = [build_prediction_tick(t) for t in full_ticks]
-    else:
-        prediction_ticks = [build_prediction_tick(t) for t in ticks]
+    prediction_ticks = [build_prediction_tick(t) for t in ticks]
+
+    full_ticks: list[dict[str, Any]] = []
+    if full_ticks_raw and isinstance(full_ticks_raw, list) and len(full_ticks_raw) > 0:
+        if isinstance(full_ticks_raw[0], dict):
+            full_ticks = full_ticks_raw
 
     team1_on_ct = round_data.get("team1_on_ct", True)
     winner = round_data.get("winner", "Unknown")
@@ -408,6 +463,7 @@ def build_round_context(
         team1_alive_count=team1_alive,
         team2_alive_count=team2_alive,
         map_name=round_data.get("map_name", "Unknown"),
+        full_ticks=full_ticks,
     )
 
 

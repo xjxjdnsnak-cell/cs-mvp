@@ -184,7 +184,7 @@ def get_important_ticks_by_round(parser: DemoParser, interval=0.5):
     return ticks_by_round
 
 
-def get_all_ticks_by_round(parser: DemoParser) -> dict[int, list[int]]:
+def get_all_ticks_by_round(parser: DemoParser) -> dict[int, list[dict]]:
     df = parser.parse_ticks(
         wanted_props=[
             "game_time",
@@ -217,11 +217,16 @@ def get_all_ticks_by_round(parser: DemoParser) -> dict[int, list[int]]:
             continue
 
         ticks = df_round["tick"].to_numpy()
+        game_times = df_round["game_time"].to_numpy()
 
         if len(ticks) == 0:
             continue
 
-        ticks_by_round[int(round_id)] = ticks.astype(int).tolist()
+        round_seconds = game_times - round_start
+        ticks_by_round[int(round_id)] = [
+            {"tick": int(t), "round_seconds": float(rs)}
+            for t, rs in zip(ticks, round_seconds)
+        ]
 
     return ticks_by_round
 

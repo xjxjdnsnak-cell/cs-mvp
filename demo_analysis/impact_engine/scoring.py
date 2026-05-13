@@ -4,9 +4,9 @@ from typing import Any
 
 from .align import (
     find_death_trade_kill,
-    find_exact_tick,
+    find_exact_tick_via_full,
     find_nearest_tick,
-    find_ticks_before,
+    find_ticks_before_via_full,
     find_ticks_after,
     get_alive_count_at_tick,
     get_duel_probability,
@@ -279,9 +279,15 @@ def calculate_player_round_impact(
     name_to_idx = get_name_to_idx(round_context.ticks)
 
     for kill in kills:
-        before_tick = find_exact_tick(round_context.ticks, kill.tick - 0.1, tolerance=0.02)
-        after_tick = find_exact_tick(round_context.ticks, kill.tick + 0.1, tolerance=0.02)
-        risk_window = find_ticks_before(round_context.ticks, kill.tick, max_seconds=10.0)
+        before_tick = find_exact_tick_via_full(
+            round_context.full_ticks, round_context.ticks, kill.tick - 0.1, tolerance=0.02
+        )
+        after_tick = find_exact_tick_via_full(
+            round_context.full_ticks, round_context.ticks, kill.tick + 0.1, tolerance=0.02
+        )
+        risk_window = find_ticks_before_via_full(
+            round_context.full_ticks, round_context.ticks, kill.tick, max_seconds=10.0
+        )
 
         labels = label_event(
             kill, before_tick, after_tick, risk_window, round_context,
@@ -294,9 +300,15 @@ def calculate_player_round_impact(
         kill_impacts.append(impact)
 
     for death in deaths:
-        before_tick = find_exact_tick(round_context.ticks, death.tick - 0.1, tolerance=0.02)
-        after_tick = find_exact_tick(round_context.ticks, death.tick + 0.1, tolerance=0.02)
-        risk_window = find_ticks_before(round_context.ticks, death.tick, max_seconds=10.0)
+        before_tick = find_exact_tick_via_full(
+            round_context.full_ticks, round_context.ticks, death.tick - 0.1, tolerance=0.02
+        )
+        after_tick = find_exact_tick_via_full(
+            round_context.full_ticks, round_context.ticks, death.tick + 0.1, tolerance=0.02
+        )
+        risk_window = find_ticks_before_via_full(
+            round_context.full_ticks, round_context.ticks, death.tick, max_seconds=10.0
+        )
 
         risk_assessment = player_risk_assessments.get(death.player)
         if risk_assessment is None:

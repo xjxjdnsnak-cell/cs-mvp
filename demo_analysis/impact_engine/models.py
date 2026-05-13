@@ -398,3 +398,4 @@ class RoundContext:
     team1_alive_count: int = 5
     team2_alive_count: int = 5
     map_name: str = "Unknown"
+    full_ticks: list[dict[str, Any]] = field(default_factory=list)
