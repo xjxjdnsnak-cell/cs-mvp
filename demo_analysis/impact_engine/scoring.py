@@ -12,6 +12,7 @@ from .align import (
     get_duel_probability,
     get_name_to_idx,
     get_player_side_win_rate,
+    estimate_tick_interval,
     safe_float,
     was_bomb_planted_before_tick,
 )
@@ -278,9 +279,38 @@ def calculate_player_round_impact(
 
     name_to_idx = get_name_to_idx(round_context.ticks)
 
+    interval = estimate_tick_interval(round_context.ticks)
+    event_window_offset = 6.0 * interval
+    event_tolerance = max(1.5 * interval, 0.01)
+
+    alignment_diag: dict[str, Any] = {
+        "attempts": 0,
+        "exact_matches": 0,
+        "fallback_matches": 0,
+        "time_error_sum": 0.0,
+        "fallback_reasons": {},
+    }
+
+    def _resolve_tick(target_time: float) -> PredictionTick | None:
+        alignment_diag["attempts"] += 1
+        tick = find_exact_tick(round_context.ticks, target_time, tolerance=event_tolerance)
+        if tick is None:
+            alignment_diag["fallback_matches"] += 1
+            alignment_diag["fallback_reasons"]["no_tick_data"] = alignment_diag["fallback_reasons"].get("no_tick_data", 0) + 1
+            return None
+
+        err = abs(tick.round_seconds - target_time)
+        alignment_diag["time_error_sum"] += err
+        if err <= event_tolerance:
+            alignment_diag["exact_matches"] += 1
+        else:
+            alignment_diag["fallback_matches"] += 1
+            alignment_diag["fallback_reasons"]["nearest_outside_tolerance"] = alignment_diag["fallback_reasons"].get("nearest_outside_tolerance", 0) + 1
+        return tick
+
     for kill in kills:
-        before_tick = find_exact_tick(round_context.ticks, kill.tick - 0.1, tolerance=0.02)
-        after_tick = find_exact_tick(round_context.ticks, kill.tick + 0.1, tolerance=0.02)
+        before_tick = _resolve_tick(kill.tick - event_window_offset)
+        after_tick = _resolve_tick(kill.tick + event_window_offset)
         risk_window = find_ticks_before(round_context.ticks, kill.tick, max_seconds=10.0)
 
         labels = label_event(
@@ -294,8 +324,8 @@ def calculate_player_round_impact(
         kill_impacts.append(impact)
 
     for death in deaths:
-        before_tick = find_exact_tick(round_context.ticks, death.tick - 0.1, tolerance=0.02)
-        after_tick = find_exact_tick(round_context.ticks, death.tick + 0.1, tolerance=0.02)
+        before_tick = _resolve_tick(death.tick - event_window_offset)
+        after_tick = _resolve_tick(death.tick + event_window_offset)
         risk_window = find_ticks_before(round_context.ticks, death.tick, max_seconds=10.0)
 
         risk_assessment = player_risk_assessments.get(death.player)
@@ -359,6 +389,12 @@ def calculate_player_round_impact(
 
     player_team = "team1" if player_name in round_context.team1_players else "team2"
 
+
+    attempts = alignment_diag["attempts"]
+    exact_rate = (alignment_diag["exact_matches"] / attempts) if attempts else 0.0
+    fallback_rate = (alignment_diag["fallback_matches"] / attempts) if attempts else 0.0
+    avg_time_error = (alignment_diag["time_error_sum"] / attempts) if attempts else 0.0
+
     player_round = PlayerRoundImpact(
         player_name=player_name,
         round_id=round_context.round_id,
@@ -386,6 +422,14 @@ def calculate_player_round_impact(
         he_events=he_events,
         round_total_impact=round_total,
         round_label=round_label,
+        alignment_diagnostics={
+            "estimated_tick_interval": interval,
+            "event_window_offset": event_window_offset,
+            "exact_match_rate": exact_rate,
+            "fallback_rate": fallback_rate,
+            "avg_time_error": avg_time_error,
+            "fallback_reasons": alignment_diag["fallback_reasons"],
+        },
     )
 
     if round_total >= get_weight("round_impact_thresholds.carry", 3.0):

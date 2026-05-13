@@ -252,6 +252,7 @@ class PlayerRoundImpact:
 
     key_positives: list[str] = field(default_factory=list)
     key_negatives: list[str] = field(default_factory=list)
+    alignment_diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -346,6 +347,7 @@ class PlayerMatchImpact:
     negative_fire_events: list[dict[str, Any]] = field(default_factory=list)
     positive_he_events: list[dict[str, Any]] = field(default_factory=list)
     negative_he_events: list[dict[str, Any]] = field(default_factory=list)
+    alignment_diagnostics: dict[str, Any] = field(default_factory=dict)
 
     # Diagnostic fields for score calibration visibility
     avg_round_impact: float = 0.0
