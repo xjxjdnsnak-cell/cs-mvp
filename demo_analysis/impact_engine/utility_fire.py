@@ -229,6 +229,16 @@ def _attribute_by_projectile_position(events: dict[Any, FireEvent], round_contex
                         "time": tick.round_seconds,
                         "name": projectile.get("name") or "unknown",
                     })
+        for grenade in tick.entity_grenades:
+            gtype = str(grenade.get("type", "")).lower()
+            if "molotov" in gtype or "incendiary" in gtype or "incgrenade" in gtype:
+                position = coerce_position(grenade.get("position"))
+                if position is not None:
+                    fire_projectiles.append({
+                        "position": position,
+                        "time": tick.round_seconds,
+                        "name": grenade.get("name") or "unknown",
+                    })
 
     for fire in events.values():
         if fire.thrower != "unknown":
@@ -840,6 +850,15 @@ def player_info_at_tick(tick: PredictionTick, player_name: str) -> dict[str, Any
         if player.get("name") == player_name:
             return player
     return None
+
+
+def player_position_at(round_context: RoundContext, player_name: str | None, tick_time: float) -> tuple[float, float, float] | None:
+    if not player_name:
+        return None
+    tick = nearest_tick(round_context.ticks, tick_time)
+    if tick is None:
+        return None
+    return player_position(player_info_at_tick(tick, player_name))
 
 
 def player_position(player: dict[str, Any] | None) -> tuple[float, float, float] | None:

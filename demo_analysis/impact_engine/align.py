@@ -214,17 +214,16 @@ def extract_future_kill_events(
     team1_on_ct: bool = True,
 ) -> list[GameEvent]:
     """Extract low-confidence kill-like events from per-tick future_kills payloads."""
-    existing = {
+    existing_kills = [
         (
-            round(safe_float(kill.get("round_seconds", 0.0)), 3),
+            safe_float(kill.get("round_seconds", 0.0)),
             str(kill.get("killer", "")),
             str(kill.get("victim", "")),
-            str(kill.get("weapon", "")),
         )
         for kill in round_data.get("kills", [])
-    }
+    ]
     events: list[GameEvent] = []
-    seen: set[tuple[float, str, str, str]] = set(existing)
+    seen: set[tuple[float, str, str, str]] = set()
     for tick in round_data.get("ticks", []):
         tick_time = safe_float(tick.get("round_seconds", 0.0))
         for kill in tick.get("future_kills") or []:
@@ -234,16 +233,29 @@ def extract_future_kill_events(
             weapon = first_present(kill, ["weapon"], None)
             if not killer or not victim:
                 continue
+            if any(
+                existing_killer == str(killer)
+                and existing_victim == str(victim)
+                and abs(existing_time - kill_time) <= 1.0
+                for existing_time, existing_killer, existing_victim in existing_kills
+            ):
+                continue
             key = (round(kill_time, 3), str(killer), str(victim), str(weapon or ""))
             if key in seen:
                 continue
             seen.add(key)
+            killer_is_team1 = str(killer) in (team1_players or [])
+            if team1_on_ct:
+                attacker_team = "CT" if killer_is_team1 else "T"
+            else:
+                attacker_team = "T" if killer_is_team1 else "CT"
             events.append(GameEvent(
                 event_type=EventType.KILL,
                 tick=kill_time,
                 player=str(killer),
                 other_player=str(victim),
                 weapon=None if weapon is None else str(weapon),
+                team_num=attacker_team,
             ))
     return events
 

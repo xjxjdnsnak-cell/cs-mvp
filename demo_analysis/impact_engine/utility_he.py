@@ -565,6 +565,7 @@ def collect_he_damage_events(he_event: HEEvent, round_context: RoundContext) -> 
 
 def collect_he_kill_events(he_event: HEEvent, round_context: RoundContext) -> list[dict[str, Any]]:
     items = []
+    seen: set[tuple[float, str, str]] = set()
     thrower_team = get_player_team(he_event.thrower, round_context)
     for event in round_context.events:
         if event.event_type != EventType.KILL:
@@ -576,12 +577,50 @@ def collect_he_kill_events(he_event: HEEvent, round_context: RoundContext) -> li
         if abs(event.tick - he_event.tick) > get_weight("he_impact.damage_window_seconds", 2.0):
             continue
         victim = event.other_player
+        key = (round(event.tick, 3), str(event.player), str(victim))
+        if key in seen:
+            continue
+        seen.add(key)
         items.append({
             "tick": event.tick,
             "killer": event.player,
             "victim": victim,
             "team_kill": get_player_team(victim, round_context) == thrower_team,
         })
+    for tick in round_context.ticks:
+        for future_kill in tick.future_kills:
+            if not is_he_weapon(future_kill.get("weapon", "")):
+                continue
+            kill_time = safe_float(
+                future_kill.get("time") or future_kill.get("tick") or future_kill.get("round_seconds"),
+                tick.round_seconds,
+            )
+            if abs(kill_time - he_event.tick) > get_weight("he_impact.damage_window_seconds", 2.0):
+                continue
+            killer = (
+                future_kill.get("killer")
+                or future_kill.get("attacker_name")
+                or future_kill.get("attacker")
+                or future_kill.get("player")
+            )
+            if killer != he_event.thrower:
+                continue
+            victim = (
+                future_kill.get("victim")
+                or future_kill.get("victim_name")
+                or future_kill.get("user_name")
+                or future_kill.get("other_player")
+            )
+            key = (round(kill_time, 3), str(killer), str(victim))
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append({
+                "tick": kill_time,
+                "killer": killer,
+                "victim": victim,
+                "team_kill": get_player_team(victim, round_context) == thrower_team,
+            })
     return items
 
 

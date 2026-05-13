@@ -30,7 +30,7 @@ class TestMapTactics(unittest.TestCase):
         self.assertEqual(area.name, "b_site")
 
     def test_unknown_map_returns_none(self):
-        area = locate_area("de_dust2", 0, 0, 0)
+        area = locate_area("de_nonexistent", 0, 0, 0)
         self.assertIsNone(area)
 
     def test_far_from_any_area_returns_none(self):

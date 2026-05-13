@@ -9,6 +9,7 @@ from demo_analysis.impact_engine.tactical_scoring import (
     evaluate_retake_discipline,
     evaluate_save_and_exit,
 )
+from demo_analysis.impact_engine.map_tactics import locate_area
 from demo_analysis.impact_engine.report import generate_tactical_section
 
 
@@ -221,12 +222,12 @@ class TestTacticalImpactIntegration(unittest.TestCase):
         map_control, tactical_discipline, tactical_events = calculate_player_tactical_impact("T1", rc)
         self.assertLess(map_control, 0)
 
-    def test_non_mirage_map_returns_zero(self):
+    def test_unconfigured_map_returns_zero(self):
         ticks = [tick(10.0, [player("T1", 0, 0)])]
         rc = RoundContext(
             round_id=1, ticks=ticks, events=[], team1_players=["CT1"],
             team2_players=["T1"], team1_on_ct=True, winner="team1",
-            map_name="de_dust2",
+            map_name="de_unknown",
         )
         map_control, tactical_discipline, tactical_events = calculate_player_tactical_impact("T1", rc)
         self.assertEqual(map_control, 0.0)
@@ -335,6 +336,98 @@ class TestReportTacticalSection(unittest.TestCase):
         section = generate_tactical_section(mi)
         text = "\n".join(section)
         self.assertIn("独自前压", text)
+
+
+class TestDust2TacticalScoring(unittest.TestCase):
+    def test_dust2_area_detection(self):
+        self.assertEqual(locate_area("de_dust2", -417, 374).name, "top_mid")
+        self.assertIn(locate_area("de_dust2", 296, 1751).name, {"a_short", "short_stairs"})
+        self.assertIn(locate_area("de_dust2", 1613, 1603).name, {"a_long", "long_car"})
+        self.assertIn(locate_area("de_dust2", -1662, 1069).name, {"upper_tunnels", "b_tunnels"})
+
+    def test_dust2_mid_control_auto_selected(self):
+        ticks = [
+            tick(10.0, [player("T1", -417, 374), player("T2", -500, 430), player("CT1", 87, 2231)]),
+        ]
+        rc = RoundContext(
+            round_id=1, ticks=ticks, events=[], team1_players=["CT1"],
+            team2_players=["T1", "T2"], team1_on_ct=True, winner="team2",
+            map_name="de_dust2",
+        )
+        map_control, _, tactical_events = calculate_player_tactical_impact("T1", rc)
+        labels = [e["label"] for e in tactical_events]
+        self.assertIn("mid_control_success", labels)
+        self.assertGreater(map_control, 0)
+
+    def test_dust2_valid_entry_sacrifice(self):
+        events = [
+            GameEvent(event_type=EventType.DEATH, tick=25.0, player="T1", other_player="CT1"),
+            GameEvent(event_type=EventType.KILL, tick=27.0, player="T2", other_player="CT1"),
+        ]
+        ticks = [
+            tick(20.0, [player("T1", 296, 1751), player("T2", 330, 1780), player("CT1", 1061, 2466)]),
+            tick(25.0, [player("T1", 296, 1751, alive=False), player("T2", 330, 1780), player("CT1", 1061, 2466)]),
+        ]
+        rc = RoundContext(
+            round_id=7, ticks=ticks, events=events, team1_players=["CT1"],
+            team2_players=["T1", "T2"], team1_on_ct=True, winner="team2",
+            map_name="de_dust2",
+        )
+        labels = [e.label for e in evaluate_site_execute("T1", rc)]
+        self.assertIn("valid_entry_sacrifice", labels)
+
+    def test_dust2_failed_entry_no_trade(self):
+        events = [GameEvent(event_type=EventType.DEATH, tick=25.0, player="T1", other_player="CT1")]
+        ticks = [
+            tick(20.0, [player("T1", -1541, 2705), player("T2", -1662, 1069), player("CT1", -1318, 2658)]),
+            tick(25.0, [player("T1", -1541, 2705, alive=False), player("T2", -1662, 1069), player("CT1", -1318, 2658)]),
+        ]
+        rc = RoundContext(
+            round_id=8, ticks=ticks, events=events, team1_players=["CT1"],
+            team2_players=["T1", "T2"], team1_on_ct=True, winner="team1",
+            map_name="de_dust2",
+        )
+        labels = [e.label for e in evaluate_site_execute("T1", rc)]
+        self.assertIn("failed_entry_no_trade", labels)
+
+    def test_dust2_post_plant_good_position_and_overpeek(self):
+        hold_ticks = [
+            tick(17.5, [player("T1", 1402, 492), player("T2", 1450, 620), player("CT1", 87, 2231)], bomb_planted=True, bomb_planted_time=15.0),
+        ]
+        hold_rc = RoundContext(
+            round_id=12, ticks=hold_ticks, events=[], team1_players=["CT1"],
+            team2_players=["T1", "T2"], team1_on_ct=True, winner="team2",
+            bomb_planted_time=15.0, map_name="de_dust2",
+        )
+        hold_labels = [e.label for e in evaluate_post_plant_discipline("T1", hold_rc)]
+        self.assertIn("post_plant_good_position", hold_labels)
+
+        events = [GameEvent(event_type=EventType.DEATH, tick=40.0, player="T1", other_player="CT1")]
+        overpeek_ticks = [
+            tick(20.0, [player("T1", 1402, 492), player("T2", 1429, 2565), player("CT1", 87, 2231)], bomb_planted=True, bomb_planted_time=15.0),
+            tick(40.0, [player("T1", -289, 1776, alive=False), player("T2", 1429, 2565), player("CT1", 87, 2231)]),
+        ]
+        overpeek_rc = RoundContext(
+            round_id=13, ticks=overpeek_ticks, events=events, team1_players=["CT1"],
+            team2_players=["T1", "T2"], team1_on_ct=True, winner="team1",
+            bomb_planted_time=15.0, map_name="de_dust2",
+        )
+        overpeek_labels = [e.label for e in evaluate_post_plant_discipline("T1", overpeek_rc)]
+        self.assertIn("post_plant_overpeek", overpeek_labels)
+
+    def test_dust2_retake_solo_feed(self):
+        events = [GameEvent(event_type=EventType.DEATH, tick=40.0, player="CT1", other_player="T1")]
+        ticks = [
+            tick(20.0, [player("CT1", 87, 2231), player("T1", 1061, 2466), player("T2", 1402, 492)], bomb_planted=True, bomb_planted_time=15.0),
+            tick(40.0, [player("CT1", -289, 1776, alive=False), player("T1", 1061, 2466), player("T2", 1402, 492)]),
+        ]
+        rc = RoundContext(
+            round_id=18, ticks=ticks, events=events, team1_players=["CT1"],
+            team2_players=["T1", "T2"], team1_on_ct=True, winner="team2",
+            bomb_planted_time=15.0, map_name="de_dust2",
+        )
+        labels = [e.label for e in evaluate_retake_discipline("CT1", rc)]
+        self.assertIn("retake_solo_feed", labels)
 
 
 if __name__ == "__main__":

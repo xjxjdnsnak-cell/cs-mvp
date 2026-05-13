@@ -1,5 +1,231 @@
 nearest_threshold: 300
 overview: demo_analysis/static/overviews/de_dust2.png
+
+areas:
+  - name: t_spawn
+    name_cn: 匪家
+    type: spawn
+    side_value: {T: high, CT: low}
+    center: [-195, -753]
+    radius: 600
+  - name: ct_spawn
+    name_cn: 警家
+    type: spawn
+    side_value: {T: low, CT: high}
+    center: [87, 2231]
+    radius: 520
+  - name: top_mid
+    name_cn: 中远
+    type: choke
+    side_value: {T: high, CT: high}
+    center: [-417, 374]
+    radius: 380
+  - name: mid
+    name_cn: 中路
+    type: rotation_key
+    side_value: {T: medium, CT: medium}
+    center: [-403, 1122]
+    radius: 520
+  - name: mid_doors
+    name_cn: 中门
+    type: choke
+    side_value: {T: high, CT: high}
+    center: [-289, 1776]
+    radius: 180
+  - name: xbox
+    name_cn: Xbox
+    type: choke
+    side_value: {T: medium, CT: medium}
+    center: [-646, 591]
+    radius: 230
+  - name: lower_tunnels
+    name_cn: 暗道
+    type: rotation_key
+    side_value: {T: medium, CT: medium}
+    center: [-284, -280]
+    radius: 520
+  - name: catwalk
+    name_cn: 小道
+    type: rotation_key
+    side_value: {T: high, CT: high}
+    center: [-108, 1175]
+    radius: 450
+  - name: a_short
+    name_cn: A小
+    type: choke
+    side_value: {T: high, CT: high}
+    center: [266, 1782]
+    radius: 430
+  - name: short_stairs
+    name_cn: 小道楼梯
+    type: choke
+    side_value: {T: high, CT: medium}
+    center: [296, 1751]
+    radius: 160
+  - name: long_doors
+    name_cn: A门
+    type: choke
+    side_value: {T: high, CT: high}
+    center: [631, 544]
+    radius: 280
+  - name: blue
+    name_cn: 蓝箱
+    type: power_position
+    side_value: {T: medium, CT: medium}
+    center: [795, 1151]
+    radius: 280
+  - name: pit
+    name_cn: 大坑
+    type: power_position
+    side_value: {T: high, CT: medium}
+    center: [1402, 492]
+    radius: 420
+  - name: a_long
+    name_cn: A大
+    type: choke
+    side_value: {T: high, CT: high}
+    center: [1613, 1603]
+    radius: 700
+  - name: long_car
+    name_cn: 蓝车
+    type: power_position
+    side_value: {T: medium, CT: high}
+    center: [1692, 2027]
+    radius: 320
+  - name: a_cross
+    name_cn: A过点
+    type: choke
+    side_value: {T: high, CT: high}
+    center: [923, 2250]
+    radius: 470
+  - name: a_ramp
+    name_cn: A坡
+    type: choke
+    side_value: {T: high, CT: medium}
+    center: [1429, 2565]
+    radius: 360
+  - name: a_site
+    name_cn: A包点
+    type: bombsite
+    side_value: {T: high, CT: high}
+    center: [1061, 2466]
+    radius: 470
+  - name: default_plant_a
+    name_cn: A默认下包位
+    type: plant_zone
+    side_value: {T: high, CT: low}
+    center: [1061, 2466]
+    radius: 230
+  - name: goose
+    name_cn: 鹅位
+    type: power_position
+    side_value: {T: high, CT: medium}
+    center: [1061, 2941]
+    radius: 220
+  - name: upper_tunnels
+    name_cn: B洞
+    type: choke
+    side_value: {T: high, CT: high}
+    center: [-1662, 1069]
+    radius: 620
+  - name: b_tunnels
+    name_cn: B通
+    type: choke
+    side_value: {T: high, CT: high}
+    center: [-1997, 1607]
+    radius: 280
+  - name: b_doors
+    name_cn: B门
+    type: choke
+    side_value: {T: medium, CT: high}
+    center: [-2204, 2196]
+    radius: 190
+  - name: window
+    name_cn: B窗
+    type: rotation_key
+    side_value: {T: medium, CT: high}
+    center: [-1318, 2658]
+    radius: 180
+  - name: b_site
+    name_cn: B包点
+    type: bombsite
+    side_value: {T: high, CT: high}
+    center: [-1541, 2705]
+    radius: 470
+  - name: default_plant_b
+    name_cn: B默认下包位
+    type: plant_zone
+    side_value: {T: high, CT: low}
+    center: [-1541, 2705]
+    radius: 230
+  - name: b_car
+    name_cn: 白车
+    type: power_position
+    side_value: {T: medium, CT: high}
+    center: [-1590, 1886]
+    radius: 180
+
+tactical_rules:
+  mid_control:
+    t_areas: [top_mid, mid, mid_doors, xbox, catwalk, a_short, lower_tunnels]
+    ct_areas: [ct_spawn, mid_doors, a_cross, b_doors, window]
+  control_groups:
+    - label: long_control_success
+      side: T
+      areas: [long_doors, blue, pit, a_long, long_car, a_cross]
+      score: 0.25
+      phase: map_control
+    - label: short_control_success
+      side: T
+      areas: [catwalk, a_short, short_stairs]
+      score: 0.25
+      phase: map_control
+    - label: b_tunnel_control_success
+      side: T
+      areas: [lower_tunnels, upper_tunnels, b_tunnels]
+      score: 0.25
+      phase: map_control
+  key_areas:
+    - top_mid
+    - mid
+    - mid_doors
+    - xbox
+    - catwalk
+    - a_short
+    - long_doors
+    - blue
+    - pit
+    - a_long
+    - a_cross
+    - upper_tunnels
+    - b_tunnels
+    - b_doors
+    - window
+  site_execute:
+    areas: [a_long, a_cross, a_ramp, a_site, default_plant_a, a_short, short_stairs, pit, upper_tunnels, b_tunnels, b_site, default_plant_b, b_doors, window]
+    a_areas: [a_long, a_cross, a_ramp, a_site, default_plant_a, a_short, short_stairs, pit]
+    b_areas: [upper_tunnels, b_tunnels, b_site, default_plant_b, b_doors, window]
+  post_plant:
+    strong_positions: [pit, a_short, goose, a_ramp, a_long, b_tunnels, window, b_car, b_doors]
+    dangerous_overpeeks: [mid_doors, top_mid, long_doors, ct_spawn, b_doors]
+    positive_label: post_plant_good_position
+    negative_label: post_plant_overpeek
+  retake:
+    ct_origins: [ct_spawn, mid_doors, b_doors, window, a_short, a_long, a_cross]
+
+plant_zones:
+  - name: default_plant_a
+    site: a_site
+    center: [1061, 2466]
+    radius: 230
+    post_plant_holds: [pit, a_short, goose, a_ramp, a_long]
+    dangerous_overpeeks: [mid_doors, top_mid, long_doors, ct_spawn]
+  - name: default_plant_b
+    site: b_site
+    center: [-1541, 2705]
+    radius: 230
+    post_plant_holds: [b_tunnels, window, b_car, b_doors]
+    dangerous_overpeeks: [mid_doors, b_doors, ct_spawn]
 polygons_cn:
 - name: 警家
   points:

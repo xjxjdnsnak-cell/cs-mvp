@@ -20,6 +20,7 @@ from flask import (
 
 from demo_analysis import high_level_analysis
 from demo_analysis import llm_summary as llm_summary_module
+from demo_analysis.impact_engine import ImpactEngine
 
 
 os.environ["PYTHONUTF8"] = "1"
@@ -296,7 +297,7 @@ def _run_analysis_job(
         with output_path.open("r", encoding="utf-8") as f:
             raw_results = json.load(f)
 
-        dashboard = high_level_analysis.build_dashboard_payload(raw_results)
+        dashboard = attach_impact_engine_payload(high_level_analysis.build_dashboard_payload(raw_results))
         analysis_id = uuid.uuid4().hex
         ANALYSIS_CACHE[analysis_id] = {
             "dashboard": dashboard,
@@ -323,6 +324,17 @@ def _run_analysis_job(
                 job["phase"] = "失败"
                 job["message"] = "后台任务异常"
                 job["error"] = str(exc)
+
+
+def attach_impact_engine_payload(dashboard: dict[str, Any]) -> dict[str, Any]:
+    """Attach Impact Engine JSON to the web dashboard without breaking legacy output."""
+    try:
+        dashboard["impact_engine"] = ImpactEngine(dashboard).generate_json_output()
+        dashboard.pop("impact_engine_error", None)
+    except Exception as exc:
+        dashboard["impact_engine"] = None
+        dashboard["impact_engine_error"] = str(exc)
+    return dashboard
 
 
 @app.route("/")

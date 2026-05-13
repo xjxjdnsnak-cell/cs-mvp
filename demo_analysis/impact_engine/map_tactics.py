@@ -108,6 +108,22 @@ def load_plant_zones(map_name: str) -> List[PlantZone]:
     return result
 
 
+@lru_cache(maxsize=None)
+def load_tactical_rules(map_name: str) -> Dict[str, Any]:
+    config_path = _PROJECT_ROOT / "config" / "callouts" / f"{map_name}.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except (yaml.YAMLError, OSError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    rules = data.get("tactical_rules")
+    return rules if isinstance(rules, dict) else {}
+
+
 def point_in_area(x: float, y: float, area: AreaInfo) -> bool:
     return hypot(x - area.center[0], y - area.center[1]) <= area.radius
 
