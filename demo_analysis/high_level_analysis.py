@@ -792,6 +792,7 @@ def build_dashboard_payload(raw_results: dict[str, Any]) -> dict[str, Any]:
                 "swings": swings,
                 "map_name": val.get("map_name"),
                 "ticks": val.get("ticks", []),
+                "full_ticks": val.get("full_ticks"),
             }
         )
 

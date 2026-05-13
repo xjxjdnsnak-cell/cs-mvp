@@ -8,6 +8,7 @@ from .align import (
     build_prediction_tick,
     build_round_context,
     extract_kill_events,
+    find_exact_tick,
     find_nearest_tick,
     find_ticks_before,
     get_name_to_idx,
@@ -118,7 +119,7 @@ class ImpactEngine:
 
             for event in round_context.events:
                 if event.event_type == EventType.DEATH:
-                    before_tick = find_nearest_tick(round_context.ticks, event.tick - 0.1)
+                    before_tick = find_exact_tick(round_context.ticks, event.tick - 0.1, tolerance=0.02)
                     risk_window = find_ticks_before(round_context.ticks, event.tick, max_seconds=10.0)
 
                     risk_assessment = assess_death_risk(

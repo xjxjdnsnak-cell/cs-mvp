@@ -18,6 +18,22 @@ def find_nearest_tick(ticks: list[PredictionTick], target_time: float) -> Predic
     return nearest
 
 
+def find_exact_tick(ticks: list[PredictionTick], target_time: float, tolerance: float = 0.02) -> PredictionTick | None:
+    """Find a tick that exactly matches target_time within tolerance.
+
+    For 64-tick servers, adjacent tick interval is ~0.016 seconds.
+    tolerance=0.02 ensures we find the exact tick or its immediate neighbor.
+
+    Falls back to find_nearest_tick() if no exact match found.
+    """
+    if not ticks:
+        return None
+    for tick in ticks:
+        if abs(tick.round_seconds - target_time) <= tolerance:
+            return tick
+    return find_nearest_tick(ticks, target_time)
+
+
 def find_ticks_before(
     ticks: list[PredictionTick],
     target_time: float,
@@ -348,8 +364,14 @@ def build_round_context(
     team2_players: list[str]
 ) -> RoundContext:
     """Build a RoundContext from round data."""
+    full_ticks = round_data.get("full_ticks")
     ticks = round_data.get("ticks", [])
-    prediction_ticks = [build_prediction_tick(t) for t in ticks]
+
+    # full_ticks may be raw tick numbers (int list) or formatted tick dicts
+    if full_ticks and isinstance(full_ticks[0], dict):
+        prediction_ticks = [build_prediction_tick(t) for t in full_ticks]
+    else:
+        prediction_ticks = [build_prediction_tick(t) for t in ticks]
 
     team1_on_ct = round_data.get("team1_on_ct", True)
     winner = round_data.get("winner", "Unknown")

@@ -297,6 +297,19 @@ def _run_analysis_job(
         with output_path.open("r", encoding="utf-8") as f:
             raw_results = json.load(f)
 
+        from data.process_demo import get_all_ticks_by_round
+        from demoparser2 import DemoParser
+
+        try:
+            full_parser = DemoParser(str(upload_path))
+            full_ticks_by_round = get_all_ticks_by_round(full_parser)
+            for round_id_str, full_tick_list in full_ticks_by_round.items():
+                round_key = str(round_id_str)
+                if round_key in raw_results:
+                    raw_results[round_key]["full_ticks"] = full_tick_list
+        except Exception as e:
+            print(f"全量Tick提取失败（将使用稀疏Tick回退）: {e}")
+
         dashboard = attach_impact_engine_payload(high_level_analysis.build_dashboard_payload(raw_results))
         analysis_id = uuid.uuid4().hex
         ANALYSIS_CACHE[analysis_id] = {

@@ -183,6 +183,49 @@ def get_important_ticks_by_round(parser: DemoParser, interval=0.5):
 
     return ticks_by_round
 
+
+def get_all_ticks_by_round(parser: DemoParser) -> dict[int, list[int]]:
+    df = parser.parse_ticks(
+        wanted_props=[
+            "game_time",
+            "total_rounds_played",
+        ]
+    )
+
+    df = df[["tick", "game_time", "total_rounds_played"]] \
+            .drop_duplicates() \
+            .sort_values("tick")
+
+    round_starts = parser.parse_event("round_freeze_end")
+    round_start_ticks = round_starts["tick"].to_numpy().astype(int).tolist()
+    round_start_ticks.sort()
+
+    df_round_starts_time = [None for _ in range(df["total_rounds_played"].max() + 1)]
+    round_start_df = df[df["tick"].isin(round_start_ticks)]
+    for idx, round_id in enumerate(round_start_df["total_rounds_played"].to_numpy()):
+        df_round_starts_time[round_id] = round_start_df["game_time"].to_numpy()[idx]
+
+    df_round_starts_time = np.array(df_round_starts_time)
+    df["round_start_time"] = df_round_starts_time[df["total_rounds_played"].to_numpy()]
+
+    ticks_by_round = {}
+
+    for round_id, df_round in df.groupby("total_rounds_played"):
+        round_start = df_round["round_start_time"].iloc[-1]
+
+        if round_start is None:
+            continue
+
+        ticks = df_round["tick"].to_numpy()
+
+        if len(ticks) == 0:
+            continue
+
+        ticks_by_round[int(round_id)] = ticks.astype(int).tolist()
+
+    return ticks_by_round
+
+
 def main():
     parser = argparse.ArgumentParser(description="Process a CS demo into JSON states")
     parser.add_argument("-path", type=str, required=True, help="Path to .demo file")
