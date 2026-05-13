@@ -362,6 +362,34 @@ def build_exposure(
     )
 
 
+def projectile_throw_attributes(
+    player_name: str,
+    exposure: FlashExposure,
+    round_context: RoundContext,
+) -> bool:
+    throw_times = infer_flash_throw_times_from_projectiles(round_context)
+    throw_window = get_weight("flash_impact.throw_to_blind_window_seconds", 8.0)
+    candidates = [
+        t for t in throw_times.get(player_name, [])
+        if 0 <= exposure.start_tick - t <= throw_window
+    ]
+    if not candidates:
+        return False
+    my_closest = min(exposure.start_tick - t for t in candidates)
+    other_closest: float | None = None
+    for other, times in throw_times.items():
+        if other == player_name:
+            continue
+        for t in times:
+            if 0 <= exposure.start_tick - t <= throw_window:
+                diff = exposure.start_tick - t
+                if other_closest is None or diff < other_closest:
+                    other_closest = diff
+    if other_closest is None:
+        return True
+    return my_closest <= other_closest
+
+
 def attribute_flash_exposures(
     player_name: str,
     exposures: list[FlashExposure],
@@ -373,6 +401,9 @@ def attribute_flash_exposures(
             result.append(exposure)
             continue
         if inventory_throw_attributes(player_name, exposure, round_context):
+            result.append(exposure)
+            continue
+        if projectile_throw_attributes(player_name, exposure, round_context):
             result.append(exposure)
     return result
 
@@ -401,9 +432,10 @@ def inventory_throw_attributes(
     round_context: RoundContext,
 ) -> bool:
     throw_times = infer_flash_throw_times(round_context)
+    throw_window = get_weight("flash_impact.throw_to_blind_window_seconds", 8.0)
     candidates = [
         t for t in throw_times.get(player_name, [])
-        if 0 <= exposure.start_tick - t <= get_weight("flash_impact.conversion_window_seconds", 3.0)
+        if 0 <= exposure.start_tick - t <= throw_window
     ]
     if not candidates:
         return False
@@ -413,9 +445,41 @@ def inventory_throw_attributes(
             continue
         other_candidates += sum(
             1 for t in times
-            if 0 <= exposure.start_tick - t <= get_weight("flash_impact.conversion_window_seconds", 3.0)
+            if 0 <= exposure.start_tick - t <= throw_window
         )
     return other_candidates == 0
+
+
+def _get_projectile_thrower(projectile: dict[str, Any]) -> str | None:
+    for key in ("owner", "thrower", "player", "thrower_name"):
+        value = projectile.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _is_flash_projectile(projectile: dict[str, Any]) -> bool:
+    for key in ("type", "weapon", "name", "grenade_type"):
+        value = projectile.get(key)
+        if isinstance(value, str) and "flash" in value.lower():
+            return True
+    return False
+
+
+def infer_flash_throw_times_from_projectiles(round_context: RoundContext) -> dict[str, list[float]]:
+    result: dict[str, list[float]] = {}
+    for tick in round_context.ticks:
+        projectiles = getattr(tick, "projectiles", None) or []
+        entity_grenades = getattr(tick, "entity_grenades", None) or []
+        for proj in list(projectiles) + list(entity_grenades):
+            if not isinstance(proj, dict):
+                continue
+            if not _is_flash_projectile(proj):
+                continue
+            thrower = _get_projectile_thrower(proj)
+            if thrower:
+                result.setdefault(thrower, []).append(tick.round_seconds)
+    return result
 
 
 def infer_flash_throw_times(round_context: RoundContext) -> dict[str, list[float]]:

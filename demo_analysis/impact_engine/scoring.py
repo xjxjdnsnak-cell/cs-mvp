@@ -36,6 +36,7 @@ from .utility_fire import calculate_player_fire_impact
 from .utility_he import calculate_player_he_impact
 from .utility_smoke import calculate_player_smoke_impact
 from .tactical_scoring import calculate_player_tactical_impact
+from .highlight_moments import detect_highlight_moments
 
 
 def calculate_win_rate_delta(
@@ -408,7 +409,8 @@ def calculate_player_match_impact(
     player_name: str,
     team: str,
     round_impacts: list[PlayerRoundImpact],
-    all_labels: dict[str, list[str]]
+    all_labels: dict[str, list[str]],
+    round_contexts: list[RoundContext] | None = None
 ) -> PlayerMatchImpact:
     """Calculate complete match impact for a player."""
     thresholds = get_weight("round_impact_thresholds", {})
@@ -488,6 +490,11 @@ def calculate_player_match_impact(
     post_plant_errors = sum(1 for l in tactical_labels if l in ("post_plant_discipline_error", "post_plant_overpeek"))
     valid_entry_sacrifices = sum(1 for l in tactical_labels if l == "valid_entry_sacrifice")
     retake_errors = sum(1 for l in tactical_labels if l == "retake_solo_feed")
+
+    # Detect highlight moments
+    highlight_moments = detect_highlight_moments(
+        player_name, round_impacts, round_contexts or []
+    )
 
     model_impact_score_raw = calculate_model_impact_score_raw(round_impacts, player_labels)
     model_impact_score = model_impact_score_raw[1]
@@ -747,6 +754,7 @@ def calculate_player_match_impact(
         rule_quality_score_clipped=rule_quality_score,
         kill_impact_total=sum(ri.kill_impact for ri in round_impacts),
         death_impact_total=sum(ri.death_impact for ri in round_impacts),
+        highlight_moments=highlight_moments,
     )
 
 

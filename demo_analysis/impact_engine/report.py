@@ -5,6 +5,7 @@ from typing import Any
 from .align import safe_float
 from .models import (
     EventImpact,
+    HighlightMoment,
     ImpactReport,
     PlayerMatchImpact,
     PlayerRoundImpact,
@@ -350,6 +351,43 @@ def generate_he_quality_section(player: PlayerMatchImpact) -> list[str]:
     return lines
 
 
+def describe_highlight_moment(hm: HighlightMoment) -> str:
+    """Generate Chinese description for a highlight moment."""
+    return f"{hm.description} (影响力: {hm.score:.1f})"
+
+
+def generate_highlight_section(player: PlayerMatchImpact) -> list[str]:
+    """Generate highlight moments section for a player."""
+    if not player.highlight_moments:
+        return []
+
+    lines = []
+    lines.append("### 高光时刻")
+    lines.append("")
+
+    # Group by type
+    by_type: dict[str, list[HighlightMoment]] = {}
+    for hm in player.highlight_moments:
+        by_type.setdefault(hm.type, []).append(hm)
+
+    for type_key, moments in by_type.items():
+        type_names = {
+            "multi_kill": "多杀",
+            "quick_multi_kill": "快速连杀",
+            "clutch": "残局胜利",
+            "hard_duel": "高难度对枪",
+            "he_multi_hit": "手雷多杀",
+            "impactful_opening_kill": "关键首杀",
+        }
+        type_name = type_names.get(type_key, type_key)
+        lines.append(f"**{type_name}** ({len(moments)}次)")
+        for hm in moments[:3]:  # Show top 3 per type
+            lines.append(f"- {describe_highlight_moment(hm)}")
+        lines.append("")
+
+    return lines
+
+
 def get_player_summary(player: PlayerMatchImpact) -> str:
     """Generate a brief summary for a player."""
     rating = player.rating_0_100
@@ -396,6 +434,8 @@ def generate_player_report(player: PlayerMatchImpact) -> str:
     lines.append(f"**模型影响分**: {model_score:.1f}")
     lines.append(f"**规则质量分**: {rule_score:.1f}")
     lines.append("")
+
+    lines.extend(generate_highlight_section(player))
 
     kills, deaths, _ = player.kda
     lines.append(f"### KDA: {kills}/{deaths}")
@@ -773,6 +813,7 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
             "player_name": player.player_name,
             "team": player.team,
             "rating_0_100": round(player.rating_0_100, 1),
+            "rating_components": player.rating_components,
             "model_impact_score": round(player.model_impact_score, 2),
             "rule_quality_score": round(player.rule_quality_score, 2),
             "flash_score": round(player.flash_score, 2),
@@ -934,6 +975,18 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
                     "reason": event.get("reason", ""),
                 }
                 for event in (player.positive_tactical_events + player.negative_tactical_events)[:10]
+            ],
+            "highlight_moments": [
+                {
+                    "round": hm.round_id,
+                    "tick": round(hm.tick, 2),
+                    "type": hm.type,
+                    "subtype": hm.subtype,
+                    "description": hm.description,
+                    "score": round(hm.score, 2),
+                    "details": hm.details,
+                }
+                for hm in player.highlight_moments
             ],
             "positive_events": player.positive_kill_events[:5],
             "negative_events": player.negative_death_events[:5],

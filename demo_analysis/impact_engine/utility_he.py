@@ -521,7 +521,24 @@ def detect_low_value_he(
 
 def collect_he_damage_events(he_event: HEEvent, round_context: RoundContext) -> list[dict[str, Any]]:
     items = []
+    seen: set[tuple[float, str, str, int]] = set()
     thrower_team = get_player_team(he_event.thrower, round_context)
+
+    def _add_item(tick_time: float, attacker: str, victim: str, damage: int, health_before: int | None, position: tuple[float, float, float] | None) -> None:
+        key = (round(tick_time, 2), str(attacker or ""), str(victim or ""), int(damage or 0))
+        if key in seen:
+            return
+        seen.add(key)
+        items.append({
+            "tick": tick_time,
+            "attacker": attacker,
+            "victim": victim,
+            "damage": damage,
+            "team_damage": get_player_team(victim, round_context) == thrower_team,
+            "health_before": health_before,
+            "position": position,
+        })
+
     for event in he_damage_game_events(round_context):
         if abs(event.tick - he_event.tick) > get_weight("he_impact.damage_window_seconds", 2.0):
             continue
@@ -530,15 +547,14 @@ def collect_he_damage_events(he_event: HEEvent, round_context: RoundContext) -> 
         victim = event.other_player or event.player
         health_before = player_health_before(round_context, victim, event.tick)
         victim_position = player_position_at(round_context, victim, event.tick)
-        items.append({
-            "tick": event.tick,
-            "attacker": event.player,
-            "victim": victim,
-            "damage": int(event.damage_health or 0),
-            "team_damage": get_player_team(victim, round_context) == thrower_team,
-            "health_before": health_before,
-            "position": victim_position,
-        })
+        _add_item(
+            event.tick,
+            event.player,
+            victim,
+            int(event.damage_health or 0),
+            health_before,
+            victim_position,
+        )
     for tick in round_context.ticks:
         for dmg in tick.future_damage:
             if not is_he_weapon(dmg.get("weapon", "")):
@@ -551,15 +567,14 @@ def collect_he_damage_events(he_event: HEEvent, round_context: RoundContext) -> 
                 continue
             victim = dmg.get("victim_name") or dmg.get("user_name") or dmg.get("player")
             damage = int(safe_float(dmg.get("dmg_health") or dmg.get("damage_health") or dmg.get("damage"), 0))
-            items.append({
-                "tick": dmg_time,
-                "attacker": attacker,
-                "victim": victim,
-                "damage": damage,
-                "team_damage": get_player_team(victim, round_context) == thrower_team,
-                "health_before": player_health_before(round_context, victim, dmg_time),
-                "position": player_position_at(round_context, victim, dmg_time),
-            })
+            _add_item(
+                dmg_time,
+                attacker,
+                victim,
+                damage,
+                player_health_before(round_context, victim, dmg_time),
+                player_position_at(round_context, victim, dmg_time),
+            )
     return items
 
 

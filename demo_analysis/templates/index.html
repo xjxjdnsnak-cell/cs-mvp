@@ -6,7 +6,7 @@
   <title>CS-Net Round Win Rate Analyzer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
 </head>
@@ -26,6 +26,9 @@
             <option value="en">English</option>
           </select>
         </label>
+        <button id="theme-toggle" class="theme-toggle" type="button" title="切换暗色模式">
+          <span class="theme-icon">🌙</span>
+        </button>
       </div>
       <p class="eyebrow">CS2 DEM INTELLIGENCE</p>
       <h1>Round Win Rate Analyzer</h1>
@@ -64,6 +67,27 @@
         <p class="hint" data-i18n="analyze_hint">进度说明: 解析 demo 一般需要 30~60 秒，运行模型通常不到 1 分钟。分析中会显示当前阶段和正在处理的回合。</p>
         <button id="analyze-btn" type="submit" data-i18n="analyze_btn">开始分析</button>
       </form>
+
+      <div class="load-json-divider">
+        <span data-i18n="or_load_json">或加载已有分析</span>
+      </div>
+
+      <form id="load-json-form">
+        <div class="grid two-col">
+          <label>
+            <span data-i18n="json_file">JSON 分析结果</span>
+            <input type="file" name="json_file" id="json-file" accept=".json" required />
+          </label>
+          <label>
+            <span data-i18n="dem_file_optional">DEM 文件（可选）</span>
+            <input type="file" name="demo_file" id="json-demo-file" accept=".dem" />
+          </label>
+        </div>
+        <p class="hint" data-i18n="load_json_hint">直接加载已有的 analysis.json，跳过模型推理，立即查看结果。</p>
+        <p class="hint" data-i18n="load_json_dem_hint">上传对应的 DEM 文件可启用 2D 回放器。</p>
+        <button id="load-json-btn" type="submit" data-i18n="load_json_btn">加载 JSON</button>
+      </form>
+
       <pre id="status-log" class="status-log" data-i18n="status_waiting">等待上传 DEM...</pre>
     </section>
 

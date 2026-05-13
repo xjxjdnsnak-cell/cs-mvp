@@ -4,6 +4,7 @@ const state = {
   selectedRoundIndex: 0,
   chart: null,
   runId: null,
+  runIdFromAnalyze: false,
   advancedExpanded: false,
   selectedImpactPlayer: "",
 };
@@ -11,6 +12,8 @@ const state = {
 const refs = {
   analyzeForm: document.getElementById("analyze-form"),
   analyzeBtn: document.getElementById("analyze-btn"),
+  loadJsonForm: document.getElementById("load-json-form"),
+  loadJsonBtn: document.getElementById("load-json-btn"),
   appLanguage: document.getElementById("app-language"),
   modelPath: document.getElementById("model-path"),
   device: document.getElementById("device"),
@@ -58,10 +61,19 @@ const I18N = {
     analyze_hint: "进度说明: 解析 demo 一般需要 30~60 秒，运行模型通常不到 1 分钟。分析中会显示当前阶段和正在处理的回合。",
     analyze_btn: "开始分析",
     status_waiting: "等待上传 DEM...",
+    or_load_json: "或加载已有分析",
+    json_file: "JSON 分析结果",
+    load_json_hint: "直接加载已有的 analysis.json，跳过模型推理，立即查看结果。",
+    load_json_dem_hint: "上传对应的 DEM 文件可启用 2D 回放器。",
+    dem_file_optional: "DEM 文件（可选）",
+    load_json_btn: "加载 JSON",
+    load_json_submitting: "正在加载 JSON...",
+    load_json_failed: "加载失败: {error}",
     section_round_trend: "2. 回合走势",
     section_viewer: "3. 2D 回放器",
     viewer_open: "在新标签页打开 2D 回放",
     viewer_hint: "在新标签页打开同一 demo 的 2D 回放（基于 third_party/csgo-2d-demo-viewer-dev，包含烟雾/闪光/手雷弹道）。",
+    viewer_need_demo: "2D回放器需要DEM文件：请通过「运行分析」上传.dem文件，或在「加载JSON」时同时上传配套的.dem文件。",
     section_tick_state: "4. 回合实时态势",
     section_round_summary: "5. 当前回合最终贡献",
     section_overall_summary: "6. 全场平均贡献",
@@ -94,6 +106,13 @@ const I18N = {
     term_avg_kill_help: "平均 Kill：该玩家跨回合的平均击杀贡献（kill_contribution）。",
     term_avg_tactical_help: "平均 Tactical：该玩家跨回合的平均战术贡献（tactical_contribution）。",
     term_avg_total_help: "平均 Total：该玩家跨回合的平均总贡献（kill+tactical）。",
+    section_highlights: "高光时刻",
+    highlight_multi_kill: "多杀",
+    highlight_quick_multi_kill: "快速连杀",
+    highlight_clutch: "残局胜利",
+    highlight_hard_duel: "高难度对枪",
+    highlight_he_multi_hit: "手雷多杀",
+    highlight_impactful_opening_kill: "关键首杀",
     section_llm: "9. 语言模型总结",
     api_key: "API Key",
     model_name: "模型名",
@@ -154,10 +173,19 @@ const I18N = {
     analyze_hint: "Progress note: demo parsing usually takes 30-60s, and model inference is usually under 1 minute.",
     analyze_btn: "Start Analysis",
     status_waiting: "Waiting for DEM upload...",
+    or_load_json: "Or load existing analysis",
+    json_file: "JSON Analysis Result",
+    load_json_hint: "Load an existing analysis.json to skip model inference and view results instantly.",
+    load_json_dem_hint: "Upload the corresponding DEM file to enable the 2D replay viewer.",
+    dem_file_optional: "DEM File (optional)",
+    load_json_btn: "Load JSON",
+    load_json_submitting: "Loading JSON...",
+    load_json_failed: "Load failed: {error}",
     section_round_trend: "2. Round Trend",
     section_viewer: "3. 2D Replay Viewer",
     viewer_open: "Open 2D Replay in New Tab",
     viewer_hint: "Open the same demo in the bundled 2D replay viewer (from third_party/csgo-2d-demo-viewer-dev, includes smoke/flash/grenade trajectories).",
+    viewer_need_demo: "2D viewer requires a DEM file: upload a .dem via 'Run Analysis', or attach the matching .dem when loading JSON.",
     section_tick_state: "4. Round Live State",
     section_round_summary: "5. Final Contribution (Current Round)",
     section_overall_summary: "6. Overall Average Contribution",
@@ -190,6 +218,13 @@ const I18N = {
     term_avg_kill_help: "Avg Kill: cross-round average kill contribution (kill_contribution).",
     term_avg_tactical_help: "Avg Tactical: cross-round average tactical contribution (tactical_contribution).",
     term_avg_total_help: "Avg Total: cross-round average total contribution (kill + tactical).",
+    section_highlights: "Highlights",
+    highlight_multi_kill: "Multi-Kill",
+    highlight_quick_multi_kill: "Quick Multi-Kill",
+    highlight_clutch: "Clutch",
+    highlight_hard_duel: "Hard Duel",
+    highlight_he_multi_hit: "HE Multi-Hit",
+    highlight_impactful_opening_kill: "Impactful Opening Kill",
     section_llm: "9. LLM Summary",
     api_key: "API Key",
     model_name: "Model Name",
@@ -824,24 +859,50 @@ function renderCurrentRound() {
   renderHoverContrib(round, 0);
 }
 
+function buildViewerUrl() {
+  if (!state.runId) return null;
+  let demoUrl;
+  if (state.analysisId && !state.runIdFromAnalyze) {
+    demoUrl = `${window.location.origin}/api/demo_file_by_analysis/${encodeURIComponent(state.analysisId)}.dem`;
+  } else {
+    demoUrl = `${window.location.origin}/api/demo_file/${encodeURIComponent(state.runId)}.dem`;
+  }
+  const mapName = state.dashboard?.impact_engine?.map_name || state.dashboard?.rounds?.[0]?.map_name || "";
+  const params = [
+    `source=${encodeURIComponent(demoUrl)}`,
+  ];
+  if (mapName) {
+    params.push(`map=${encodeURIComponent(mapName)}`);
+  }
+  return `/viewer/player?${params.join("&")}`;
+}
+
 function renderViewerLink() {
   if (!refs.viewerOpen) return;
-  if (!state.runId) {
+  const url = buildViewerUrl();
+  if (!url) {
     refs.viewerOpen.classList.add("disabled");
     refs.viewerOpen.removeAttribute("href");
     return;
   }
   refs.viewerOpen.classList.remove("disabled");
-  const demoUrl = `${window.location.origin}/api/demo_file/${encodeURIComponent(state.runId)}.dem`;
-  const params = [
-    `demourl=${encodeURIComponent(demoUrl)}`,
-    "directfetch=1",
-  ];
-  if (state.analysisId) {
-    const timelineUrl = `${window.location.origin}/api/winrate_timeline/${encodeURIComponent(state.analysisId)}`;
-    params.push(`winrateurl=${encodeURIComponent(timelineUrl)}`);
-  }
-  refs.viewerOpen.setAttribute("href", `/viewer/player?${params.join("&")}`);
+  refs.viewerOpen.setAttribute("href", url);
+}
+
+if (refs.viewerOpen) {
+  refs.viewerOpen.addEventListener("click", (event) => {
+    if (!state.runId) {
+      event.preventDefault();
+      logStatus(t("viewer_need_demo") || "2D回放器需要DEM文件：请通过「运行分析」上传.dem文件，或在「加载JSON」时同时上传配套的.dem文件。");
+      return;
+    }
+    const url = buildViewerUrl();
+    if (!url) {
+      event.preventDefault();
+      return;
+    }
+    refs.viewerOpen.setAttribute("href", url);
+  });
 }
 
 function fmtPercent2(v) {
@@ -1021,6 +1082,89 @@ function renderUtilitySummaryCards(player) {
   ].join("");
 }
 
+function renderHighlightMoments(player) {
+  const moments = player.highlight_moments || [];
+  if (!moments.length) return "";
+
+  const typeNames = {
+    multi_kill: t("highlight_multi_kill"),
+    quick_multi_kill: t("highlight_quick_multi_kill"),
+    clutch: t("highlight_clutch"),
+    hard_duel: t("highlight_hard_duel"),
+    he_multi_hit: t("highlight_he_multi_hit"),
+    impactful_opening_kill: t("highlight_impactful_opening_kill"),
+  };
+
+  const subtypeBadges = {
+    double_kill: "双杀",
+    triple_kill: "三杀",
+    quadra_kill: "四杀",
+    ace: "五杀/ACE",
+    quick_2_kill: "快速双杀",
+    quick_3_kill: "快速三杀",
+    hard_duel_win: "Hard Duel",
+    he_2_hit: "2人命中",
+    he_3_hit: "3人命中",
+    high_impact_opening: "高影响首杀",
+  };
+
+  let html = '<div class="highlight-moments"><h4>' + t("section_highlights") + '</h4><div class="moment-list">';
+
+  moments.slice(0, 5).forEach((m) => {
+    const typeName = typeNames[m.type] || m.type;
+    const subtypeName = subtypeBadges[m.subtype] || m.subtype;
+    const detailText = m.description || "";
+    html += `<div class="moment-badge" data-type="${escapeAttr(m.type)}" title="${escapeAttr(detailText)}">`;
+    html += `<span class="moment-type">${escapeAttr(typeName)}</span>`;
+    html += `<span class="moment-subtype">${escapeAttr(subtypeName)}</span>`;
+    html += `<span class="moment-round">R${m.round}</span>`;
+    html += `<span class="moment-score">${Number(m.score || 0).toFixed(1)}</span>`;
+    html += `</div>`;
+  });
+
+  html += "</div></div>";
+  return html;
+}
+
+function renderHighlightDetails(player) {
+  const moments = player.highlight_moments || [];
+  if (!moments.length) return "";
+
+  const typeNames = {
+    multi_kill: t("highlight_multi_kill"),
+    quick_multi_kill: t("highlight_quick_multi_kill"),
+    clutch: t("highlight_clutch"),
+    hard_duel: t("highlight_hard_duel"),
+    he_multi_hit: t("highlight_he_multi_hit"),
+    impactful_opening_kill: t("highlight_impactful_opening_kill"),
+  };
+
+  const sortedMoments = moments
+    .slice()
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .slice(0, 10);
+
+  const itemsHtml = sortedMoments
+    .map((m) => {
+      const typeName = typeNames[m.type] || m.type;
+      const desc = m.description || "";
+      return [
+        `<div class="highlight-item" data-type="${escapeAttr(m.type)}">`,
+        `<span class="highlight-type">${escapeAttr(typeName)}</span>`,
+        `<span class="highlight-desc">${escapeAttr(desc)}</span>`,
+        `</div>`,
+      ].join("");
+    })
+    .join("");
+
+  return [
+    '<div class="highlight-details">',
+    `<h4>${t("section_highlights")}</h4>`,
+    `<div class="highlight-list">${itemsHtml}</div>`,
+    '</div>',
+  ].join("");
+}
+
 function renderTacticalSummary(player) {
   const rows = [
     `地图控制 ${Number(player.map_control_score || 0).toFixed(2)}`,
@@ -1134,6 +1278,8 @@ function renderImpactEnginePanel() {
     '<h3>玩家总览</h3>',
     summaryTable,
     `<h3>玩家详情 · ${escapeAttr(selected.player_name)}</h3>`,
+    renderHighlightMoments(selected),
+    renderHighlightDetails(selected),
     renderUtilitySummaryCards(selected),
     renderImpactEventList("闪光弹质量", selected.flash_events || [], "暂无闪光事件"),
     renderImpactEventList("烟雾弹质量", selected.smoke_events || [], "暂无烟雾事件"),
@@ -1257,6 +1403,19 @@ if (refs.appLanguage) {
   });
 }
 
+async function runLoadJson(formData) {
+  const resp = await fetch("/api/load_json", {
+    method: "POST",
+    body: formData,
+  });
+
+  const data = await resp.json();
+  if (!resp.ok) {
+    throw new Error(data.error || "加载失败");
+  }
+  return data;
+}
+
 refs.analyzeForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   refs.analyzeBtn.disabled = true;
@@ -1272,6 +1431,7 @@ refs.analyzeForm.addEventListener("submit", async (event) => {
     state.dashboard = done.dashboard;
     state.selectedRoundIndex = 0;
     state.runId = done.run_id || null;
+    state.runIdFromAnalyze = true;
 
     renderDashboard();
     renderProgress(done);
@@ -1281,6 +1441,32 @@ refs.analyzeForm.addEventListener("submit", async (event) => {
     refs.analyzeBtn.disabled = false;
   }
 });
+
+if (refs.loadJsonForm) {
+  refs.loadJsonForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    refs.loadJsonBtn.disabled = true;
+    logStatus(t("load_json_submitting"));
+
+    try {
+      const formData = new FormData(refs.loadJsonForm);
+      const data = await runLoadJson(formData);
+
+      state.analysisId = data.analysis_id;
+      state.dashboard = data.dashboard;
+      state.selectedRoundIndex = 0;
+      state.runId = data.run_id || null;
+      state.runIdFromAnalyze = false;
+
+      renderDashboard();
+      logStatus("JSON 加载完成");
+    } catch (err) {
+      logStatus(t("load_json_failed", { error: err.message }));
+    } finally {
+      refs.loadJsonBtn.disabled = false;
+    }
+  });
+}
 
 refs.llmBtn.addEventListener("click", async () => {
   if (!state.analysisId) {
@@ -1359,3 +1545,19 @@ refs.llmBtn.addEventListener("click", async () => {
     refs.llmBtn.disabled = false;
   }
 });
+
+// Dark mode toggle
+const themeToggle = document.getElementById("theme-toggle");
+if (themeToggle) {
+  const savedTheme = localStorage.getItem("csnet-theme");
+  if (savedTheme === "dark") {
+    document.documentElement.classList.add("dark");
+    themeToggle.querySelector(".theme-icon").textContent = "☀️";
+  }
+
+  themeToggle.addEventListener("click", () => {
+    const isDark = document.documentElement.classList.toggle("dark");
+    localStorage.setItem("csnet-theme", isDark ? "dark" : "light");
+    themeToggle.querySelector(".theme-icon").textContent = isDark ? "☀️" : "🌙";
+  });
+}

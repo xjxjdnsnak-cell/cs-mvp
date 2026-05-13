@@ -164,12 +164,21 @@ class ImpactEngine:
                             all_player_labels[player] = []
                         all_player_labels[player].append(label_name)
 
+        round_contexts: list[RoundContext] = []
+        for round_data in self.rounds:
+            round_contexts.append(build_round_context(
+                round_data,
+                team1_players,
+                team2_players
+            ))
+
         for player, impact in player_impact_map.items():
             updated = calculate_player_match_impact(
                 player,
                 impact.team,
                 impact.round_impacts,
-                all_player_labels
+                all_player_labels,
+                round_contexts=round_contexts
             )
             player_impact_map[player] = updated
 

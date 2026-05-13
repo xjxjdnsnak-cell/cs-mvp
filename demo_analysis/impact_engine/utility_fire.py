@@ -595,20 +595,35 @@ def score_fake_pressure_fire(
 
 def collect_fire_damage_events(fire_event: FireEvent, round_context: RoundContext) -> list[dict[str, Any]]:
     items = []
+    seen: set[tuple[float, str, str, int]] = set()
     thrower_team = get_player_team(fire_event.thrower, round_context)
+
+    def _add_item(tick_time: float, attacker: str, victim: str, damage: int, team_damage: bool) -> None:
+        key = (round(tick_time, 2), str(attacker or ""), str(victim or ""), int(damage or 0))
+        if key in seen:
+            return
+        seen.add(key)
+        items.append({
+            "tick": tick_time,
+            "attacker": attacker,
+            "victim": victim,
+            "damage": damage,
+            "team_damage": team_damage,
+            "kill": killed_after_any(fire_event, victim, round_context, seconds=0.2),
+        })
+
     for event in round_context.events:
         if event.event_type == EventType.DAMAGE and 0 <= event.tick - fire_event.start_tick <= get_weight("fire_impact.damage_window_seconds", 6.0):
             if event.weapon and not is_fire_weapon(event.weapon):
                 continue
             victim = event.other_player or event.player
-            items.append({
-                "tick": event.tick,
-                "attacker": event.player,
-                "victim": victim,
-                "damage": int(event.damage_health or 0),
-                "team_damage": get_player_team(victim, round_context) == thrower_team,
-                "kill": killed_after_any(fire_event, victim, round_context, seconds=0.2),
-            })
+            _add_item(
+                event.tick,
+                event.player,
+                victim,
+                int(event.damage_health or 0),
+                get_player_team(victim, round_context) == thrower_team,
+            )
     for tick in round_context.ticks:
         for dmg in tick.future_damage:
             dmg_time = safe_float(dmg.get("time"), tick.round_seconds)
@@ -620,14 +635,13 @@ def collect_fire_damage_events(fire_event: FireEvent, round_context: RoundContex
             attacker = dmg.get("attacker_name") or fire_event.thrower
             damage = int(safe_float(dmg.get("dmg_health") or dmg.get("damage_health") or dmg.get("damage"), 0))
             if victim:
-                items.append({
-                    "tick": dmg_time,
-                    "attacker": attacker,
-                    "victim": victim,
-                    "damage": damage,
-                    "team_damage": get_player_team(victim, round_context) == thrower_team,
-                    "kill": killed_after_any(fire_event, victim, round_context, seconds=0.2),
-                })
+                _add_item(
+                    dmg_time,
+                    attacker,
+                    victim,
+                    damage,
+                    get_player_team(victim, round_context) == thrower_team,
+                )
     return items
 
 

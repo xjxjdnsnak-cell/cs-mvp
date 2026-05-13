@@ -180,6 +180,18 @@ class HEImpact:
 
 
 @dataclass
+class HighlightMoment:
+    """A highlight moment (multi-kill, clutch, hard duel, etc.)."""
+    round_id: int
+    tick: float
+    type: str  # "multi_kill", "clutch", "hard_duel", "he_multi_hit", "impactful_opening_kill", "quick_multi_kill"
+    subtype: str  # e.g., "triple_kill", "1v3_clutch", "hard_duel_win"
+    description: str
+    score: float
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class RiskAssessment:
     """Assessment of death risk for a player."""
     risk_type: RiskType
@@ -204,6 +216,7 @@ class PlayerRoundImpact:
 
     kills: list[EventImpact] = field(default_factory=list)
     deaths: list[EventImpact] = field(default_factory=list)
+    assists: list[EventImpact] = field(default_factory=list)
     trades: list[EventImpact] = field(default_factory=list)
     objectives: list[EventImpact] = field(default_factory=list)
     clutch_attempts: list[EventImpact] = field(default_factory=list)
@@ -348,6 +361,8 @@ class PlayerMatchImpact:
     rating: float = 0.0
     rating_0_100: float = 0.0
     rating_components: dict[str, Any] = field(default_factory=dict)
+
+    highlight_moments: list[HighlightMoment] = field(default_factory=list)
 
     confidence: str = "high"
 
