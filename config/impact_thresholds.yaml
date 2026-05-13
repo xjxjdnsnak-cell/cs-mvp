@@ -1,0 +1,5 @@
+global:
+  trade_window_seconds: 5.0
+  hard_duel_win_max_prob: 0.45
+  align_tolerance_seconds: 0.05
+maps: {}

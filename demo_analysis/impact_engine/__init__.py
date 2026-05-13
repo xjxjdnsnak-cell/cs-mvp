@@ -33,7 +33,7 @@ from .align import (
     get_alive_count_at_tick,
     find_nearest_teammate,
 )
-from .config import IMPACT_WEIGHTS, get_weight, get_threshold
+from .config import IMPACT_WEIGHTS, get_weight, get_threshold, set_context
 from .engine import ImpactEngine, analyze_file
 from .models import (
     EventImpact,
@@ -106,6 +106,7 @@ __all__ = [
     "IMPACT_WEIGHTS",
     "get_weight",
     "get_threshold",
+    "set_context",
     "EventImpact",
     "EventLabels",
     "EventType",
