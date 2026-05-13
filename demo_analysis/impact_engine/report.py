@@ -5,6 +5,7 @@ from typing import Any
 from .align import safe_float
 from .models import (
     EventImpact,
+    HighlightMoment,
     ImpactReport,
     PlayerMatchImpact,
     PlayerRoundImpact,
@@ -350,6 +351,43 @@ def generate_he_quality_section(player: PlayerMatchImpact) -> list[str]:
     return lines
 
 
+def describe_highlight_moment(hm: HighlightMoment) -> str:
+    """Generate Chinese description for a highlight moment."""
+    return f"{hm.description} (影响力: {hm.score:.1f})"
+
+
+def generate_highlight_section(player: PlayerMatchImpact) -> list[str]:
+    """Generate highlight moments section for a player."""
+    if not player.highlight_moments:
+        return []
+
+    lines = []
+    lines.append("### 高光时刻")
+    lines.append("")
+
+    # Group by type
+    by_type: dict[str, list[HighlightMoment]] = {}
+    for hm in player.highlight_moments:
+        by_type.setdefault(hm.type, []).append(hm)
+
+    for type_key, moments in by_type.items():
+        type_names = {
+            "multi_kill": "多杀",
+            "quick_multi_kill": "快速连杀",
+            "clutch": "残局胜利",
+            "hard_duel": "高难度对枪",
+            "he_multi_hit": "手雷多杀",
+            "impactful_opening_kill": "关键首杀",
+        }
+        type_name = type_names.get(type_key, type_key)
+        lines.append(f"**{type_name}** ({len(moments)}次)")
+        for hm in moments[:3]:  # Show top 3 per type
+            lines.append(f"- {describe_highlight_moment(hm)}")
+        lines.append("")
+
+    return lines
+
+
 def get_player_summary(player: PlayerMatchImpact) -> str:
     """Generate a brief summary for a player."""
     rating = player.rating_0_100
@@ -397,6 +435,8 @@ def generate_player_report(player: PlayerMatchImpact) -> str:
     lines.append(f"**规则质量分**: {rule_score:.1f}")
     lines.append("")
 
+    lines.extend(generate_highlight_section(player))
+
     kills, deaths, _ = player.kda
     lines.append(f"### KDA: {kills}/{deaths}")
     lines.append("")
@@ -434,6 +474,7 @@ def generate_player_report(player: PlayerMatchImpact) -> str:
     lines.extend(generate_smoke_quality_section(player))
     lines.extend(generate_fire_quality_section(player))
     lines.extend(generate_he_quality_section(player))
+    lines.extend(generate_tactical_section(player))
 
     if player.positive_kill_events or player.negative_death_events:
         lines.append("### 关键正面行为")
@@ -687,6 +728,51 @@ def generate_summary_table(report: ImpactReport) -> str:
     return "\n".join(lines)
 
 
+def generate_tactical_section(player: PlayerMatchImpact) -> list[str]:
+    """Generate the per-player tactical summary section."""
+    has_tactical_score = bool(player.map_control_score or player.tactical_discipline_score)
+    has_tactical_events = bool(player.positive_tactical_events or player.negative_tactical_events)
+    if not has_tactical_score and not has_tactical_events:
+        return []
+
+    lines = [
+        "### 地图战术表现 / 鍦板浘鎴樻湳琛ㄧ幇",
+        "",
+        f"- 地图控制分: {player.map_control_score:.1f}",
+        f"- 战术纪律分: {player.tactical_discipline_score:.1f}",
+        f"- 关键区域孤立死亡: {player.key_area_deaths}",
+        f"- 有效进点牺牲: {player.valid_entry_sacrifices}",
+        f"- 下包后纪律错误: {player.post_plant_errors}",
+        f"- 回防错误: {player.retake_errors}",
+    ]
+
+    positive = player.positive_tactical_events[:3]
+    negative = player.negative_tactical_events[:3]
+    if positive:
+        lines.extend(["", "代表性正面战术事件:"])
+        for event in positive:
+            lines.append(_format_tactical_event_line(event))
+    if negative:
+        lines.extend(["", "代表性负面战术事件:"])
+        for event in negative:
+            lines.append(_format_tactical_event_line(event))
+    return lines
+
+
+def _format_tactical_event_line(event: dict[str, Any]) -> str:
+    round_id = event.get("round") or event.get("round_id")
+    tick = event.get("tick") or event.get("start_tick")
+    label = event.get("label", "tactical_event")
+    reason = event.get("reason", "")
+    area = event.get("area_cn") or event.get("area")
+    prefix = f"- 第 {round_id} 回合"
+    if tick is not None:
+        prefix += f" {safe_float(tick):.1f}s"
+    if area:
+        prefix += f" {area}"
+    return f"{prefix}: {label}，{reason}".rstrip("，")
+
+
 def report_to_json(report: ImpactReport) -> dict[str, Any]:
     """Convert ImpactReport to JSON-serializable dict."""
     result = {
@@ -696,6 +782,7 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
         "match_winner": report.match_winner,
         "confidence": report.confidence,
         "warnings": report.warnings,
+        "utility_diagnostics": report.utility_diagnostics,
         "players": [],
     }
 
@@ -726,8 +813,26 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
             "player_name": player.player_name,
             "team": player.team,
             "rating_0_100": round(player.rating_0_100, 1),
+            "rating_components": player.rating_components,
             "model_impact_score": round(player.model_impact_score, 2),
             "rule_quality_score": round(player.rule_quality_score, 2),
+            "flash_score": round(player.flash_score, 2),
+            "smoke_score": round(player.smoke_score, 2),
+            "fire_score": round(player.fire_score, 2),
+            "he_score": round(player.he_score, 2),
+            "utility_impact": round(sum(ri.utility_impact for ri in player.round_impacts), 2),
+            "utility_event_count": sum(
+                len(ri.flash_events) + len(ri.smoke_events) + len(ri.fire_events) + len(ri.he_events)
+                for ri in player.round_impacts
+            ),
+            "map_control_score": round(player.map_control_score, 2),
+            "tactical_discipline_score": round(player.tactical_discipline_score, 2),
+            "key_area_deaths": player.key_area_deaths,
+            "post_plant_errors": player.post_plant_errors,
+            "valid_entry_sacrifices": player.valid_entry_sacrifices,
+            "retake_errors": player.retake_errors,
+            "model_impact_score_raw": round(player.model_impact_score_raw, 2),
+            "model_impact_score_clipped": round(player.model_impact_score_clipped, 2),
             "kda": {
                 "kills": player.kda[0],
                 "deaths": player.kda[1],
@@ -857,6 +962,31 @@ def report_to_json(report: ImpactReport) -> dict[str, Any]:
                     "reasons": event.get("reasons", []),
                 }
                 for event in (player.positive_he_events + player.negative_he_events)[:10]
+            ],
+            "tactical_events": [
+                {
+                    "round": event.get("round"),
+                    "tick": round(safe_float(event.get("tick")), 2),
+                    "phase": event.get("phase"),
+                    "area": event.get("area"),
+                    "area_cn": event.get("area_cn"),
+                    "impact": round(safe_float(event.get("impact")), 2),
+                    "label": event.get("label"),
+                    "reason": event.get("reason", ""),
+                }
+                for event in (player.positive_tactical_events + player.negative_tactical_events)[:10]
+            ],
+            "highlight_moments": [
+                {
+                    "round": hm.round_id,
+                    "tick": round(hm.tick, 2),
+                    "type": hm.type,
+                    "subtype": hm.subtype,
+                    "description": hm.description,
+                    "score": round(hm.score, 2),
+                    "details": hm.details,
+                }
+                for hm in player.highlight_moments
             ],
             "positive_events": player.positive_kill_events[:5],
             "negative_events": player.negative_death_events[:5],

@@ -229,6 +229,16 @@ def _attribute_by_projectile_position(events: dict[Any, FireEvent], round_contex
                         "time": tick.round_seconds,
                         "name": projectile.get("name") or "unknown",
                     })
+        for grenade in tick.entity_grenades:
+            gtype = str(grenade.get("type", "")).lower()
+            if "molotov" in gtype or "incendiary" in gtype or "incgrenade" in gtype:
+                position = coerce_position(grenade.get("position"))
+                if position is not None:
+                    fire_projectiles.append({
+                        "position": position,
+                        "time": tick.round_seconds,
+                        "name": grenade.get("name") or "unknown",
+                    })
 
     for fire in events.values():
         if fire.thrower != "unknown":
@@ -585,20 +595,35 @@ def score_fake_pressure_fire(
 
 def collect_fire_damage_events(fire_event: FireEvent, round_context: RoundContext) -> list[dict[str, Any]]:
     items = []
+    seen: set[tuple[float, str, str, int]] = set()
     thrower_team = get_player_team(fire_event.thrower, round_context)
+
+    def _add_item(tick_time: float, attacker: str, victim: str, damage: int, team_damage: bool) -> None:
+        key = (round(tick_time, 2), str(attacker or ""), str(victim or ""), int(damage or 0))
+        if key in seen:
+            return
+        seen.add(key)
+        items.append({
+            "tick": tick_time,
+            "attacker": attacker,
+            "victim": victim,
+            "damage": damage,
+            "team_damage": team_damage,
+            "kill": killed_after_any(fire_event, victim, round_context, seconds=0.2),
+        })
+
     for event in round_context.events:
         if event.event_type == EventType.DAMAGE and 0 <= event.tick - fire_event.start_tick <= get_weight("fire_impact.damage_window_seconds", 6.0):
             if event.weapon and not is_fire_weapon(event.weapon):
                 continue
             victim = event.other_player or event.player
-            items.append({
-                "tick": event.tick,
-                "attacker": event.player,
-                "victim": victim,
-                "damage": int(event.damage_health or 0),
-                "team_damage": get_player_team(victim, round_context) == thrower_team,
-                "kill": killed_after_any(fire_event, victim, round_context, seconds=0.2),
-            })
+            _add_item(
+                event.tick,
+                event.player,
+                victim,
+                int(event.damage_health or 0),
+                get_player_team(victim, round_context) == thrower_team,
+            )
     for tick in round_context.ticks:
         for dmg in tick.future_damage:
             dmg_time = safe_float(dmg.get("time"), tick.round_seconds)
@@ -610,14 +635,13 @@ def collect_fire_damage_events(fire_event: FireEvent, round_context: RoundContex
             attacker = dmg.get("attacker_name") or fire_event.thrower
             damage = int(safe_float(dmg.get("dmg_health") or dmg.get("damage_health") or dmg.get("damage"), 0))
             if victim:
-                items.append({
-                    "tick": dmg_time,
-                    "attacker": attacker,
-                    "victim": victim,
-                    "damage": damage,
-                    "team_damage": get_player_team(victim, round_context) == thrower_team,
-                    "kill": killed_after_any(fire_event, victim, round_context, seconds=0.2),
-                })
+                _add_item(
+                    dmg_time,
+                    attacker,
+                    victim,
+                    damage,
+                    get_player_team(victim, round_context) == thrower_team,
+                )
     return items
 
 
@@ -840,6 +864,15 @@ def player_info_at_tick(tick: PredictionTick, player_name: str) -> dict[str, Any
         if player.get("name") == player_name:
             return player
     return None
+
+
+def player_position_at(round_context: RoundContext, player_name: str | None, tick_time: float) -> tuple[float, float, float] | None:
+    if not player_name:
+        return None
+    tick = nearest_tick(round_context.ticks, tick_time)
+    if tick is None:
+        return None
+    return player_position(player_info_at_tick(tick, player_name))
 
 
 def player_position(player: dict[str, Any] | None) -> tuple[float, float, float] | None:

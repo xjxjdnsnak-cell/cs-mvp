@@ -35,6 +35,8 @@ from .utility_flash import calculate_player_flash_impact
 from .utility_fire import calculate_player_fire_impact
 from .utility_he import calculate_player_he_impact
 from .utility_smoke import calculate_player_smoke_impact
+from .tactical_scoring import calculate_player_tactical_impact
+from .highlight_moments import detect_highlight_moments
 
 
 def calculate_win_rate_delta(
@@ -339,6 +341,7 @@ def calculate_player_round_impact(
     fire_impact_total, fire_events = calculate_player_fire_impact(player_name, round_context)
     he_impact_total, he_events = calculate_player_he_impact(player_name, round_context)
     utility_impact_total = flash_impact_total + smoke_impact_total + fire_impact_total + he_impact_total
+    map_control_impact, tactical_discipline_impact, tactical_events = calculate_player_tactical_impact(player_name, round_context)
 
     round_total = (
         kill_impact_total
@@ -347,6 +350,8 @@ def calculate_player_round_impact(
         + objective_impact_total
         + clutch_impact_total
         + utility_impact_total
+        + map_control_impact
+        + tactical_discipline_impact
     )
 
     round_label = determine_round_label(round_total)
@@ -367,6 +372,9 @@ def calculate_player_round_impact(
         objective_impact=objective_impact_total,
         clutch_impact=clutch_impact_total,
         utility_impact=utility_impact_total,
+        map_control_impact=map_control_impact,
+        tactical_discipline_impact=tactical_discipline_impact,
+        tactical_events=tactical_events,
         flash_impact=flash_impact_total,
         flash_events=flash_events,
         smoke_impact=smoke_impact_total,
@@ -401,7 +409,8 @@ def calculate_player_match_impact(
     player_name: str,
     team: str,
     round_impacts: list[PlayerRoundImpact],
-    all_labels: dict[str, list[str]]
+    all_labels: dict[str, list[str]],
+    round_contexts: list[RoundContext] | None = None
 ) -> PlayerMatchImpact:
     """Calculate complete match impact for a player."""
     thresholds = get_weight("round_impact_thresholds", {})
@@ -474,6 +483,18 @@ def calculate_player_match_impact(
     nade_stack_hits = sum(1 for l in he_labels if l == "nade_stack_damage")
     low_value_hes = sum(1 for l in he_labels if l == "low_value_he")
     harmful_hes = sum(1 for l in he_labels if l == "harmful_he")
+    tactical_labels = [event.get("label", "") for ri in round_impacts for event in ri.tactical_events]
+    map_control_score = sum(ri.map_control_impact for ri in round_impacts)
+    tactical_discipline_score = sum(ri.tactical_discipline_impact for ri in round_impacts)
+    key_area_deaths = sum(1 for l in tactical_labels if l == "key_area_isolated_death")
+    post_plant_errors = sum(1 for l in tactical_labels if l in ("post_plant_discipline_error", "post_plant_overpeek"))
+    valid_entry_sacrifices = sum(1 for l in tactical_labels if l == "valid_entry_sacrifice")
+    retake_errors = sum(1 for l in tactical_labels if l == "retake_solo_feed")
+
+    # Detect highlight moments
+    highlight_moments = detect_highlight_moments(
+        player_name, round_impacts, round_contexts or []
+    )
 
     model_impact_score_raw = calculate_model_impact_score_raw(round_impacts, player_labels)
     model_impact_score = model_impact_score_raw[1]
@@ -542,6 +563,8 @@ def calculate_player_match_impact(
     negative_fire_events = []
     positive_he_events = []
     negative_he_events = []
+    positive_tactical_events = []
+    negative_tactical_events = []
     for ri in round_impacts:
         for flash in ri.flash_events:
             event_data = {
@@ -614,6 +637,22 @@ def calculate_player_match_impact(
                 positive_he_events.append(event_data)
             elif he.score < 0 or any(l in he.labels for l in ("harmful_he", "team_damage_he", "low_value_he", "wasted_he")):
                 negative_he_events.append(event_data)
+        for tactical in ri.tactical_events:
+            event_data = {
+                "round": ri.round_id,
+                "type": "tactical",
+                "tick": tactical.get("start_tick", tactical.get("tick", 0.0)),
+                "phase": tactical.get("phase", ""),
+                "area": tactical.get("area"),
+                "area_cn": tactical.get("area_cn"),
+                "label": tactical.get("label", ""),
+                "impact": tactical.get("impact", tactical.get("score", 0.0)),
+                "reason": tactical.get("reason", ""),
+            }
+            if event_data["impact"] > 0:
+                positive_tactical_events.append(event_data)
+            elif event_data["impact"] < 0:
+                negative_tactical_events.append(event_data)
 
     positive_events.sort(key=lambda x: x["impact"], reverse=True)
     negative_events.sort(key=lambda x: x["impact"])
@@ -625,6 +664,8 @@ def calculate_player_match_impact(
     negative_fire_events.sort(key=lambda x: x["impact"])
     positive_he_events.sort(key=lambda x: x["impact"], reverse=True)
     negative_he_events.sort(key=lambda x: x["impact"])
+    positive_tactical_events.sort(key=lambda x: x["impact"], reverse=True)
+    negative_tactical_events.sort(key=lambda x: x["impact"])
 
     return PlayerMatchImpact(
         player_name=player_name,
@@ -684,6 +725,14 @@ def calculate_player_match_impact(
         nade_stack_hits=nade_stack_hits,
         low_value_hes=low_value_hes,
         harmful_hes=harmful_hes,
+        map_control_score=map_control_score,
+        tactical_discipline_score=tactical_discipline_score,
+        key_area_deaths=key_area_deaths,
+        post_plant_errors=post_plant_errors,
+        valid_entry_sacrifices=valid_entry_sacrifices,
+        retake_errors=retake_errors,
+        positive_tactical_events=positive_tactical_events[:5],
+        negative_tactical_events=negative_tactical_events[:5],
         positive_kill_events=positive_events[:5],
         negative_death_events=negative_events[:5],
         positive_flash_events=positive_flash_events[:5],
@@ -705,6 +754,7 @@ def calculate_player_match_impact(
         rule_quality_score_clipped=rule_quality_score,
         kill_impact_total=sum(ri.kill_impact for ri in round_impacts),
         death_impact_total=sum(ri.death_impact for ri in round_impacts),
+        highlight_moments=highlight_moments,
     )
 
 

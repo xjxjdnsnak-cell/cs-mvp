@@ -3,11 +3,12 @@ from typing import Any
 from .models import EventType, PredictionTick, RoundContext
 
 try:
-    from .map_tactics import locate_area, locate_player_area, find_area_by_name
+    from .map_tactics import locate_area, locate_player_area, find_area_by_name, load_tactical_rules
 except ImportError:
     locate_area = None
     locate_player_area = None
     find_area_by_name = None
+    load_tactical_rules = None
 
 
 _SITE_RADIUS = 800.0
@@ -23,6 +24,33 @@ _SITE_EXECUTE_T_MIN = 2
 _A_EXECUTE_AREAS = {"a_ramp", "palace", "a_site", "default_plant_a", "triple"}
 _B_EXECUTE_AREAS = {"b_apps", "b_site", "default_plant_b"}
 _CT_RETAKE_ORIGINS = {"market", "ct_spawn", "jungle", "stairs", "short", "market_window", "market_door"}
+
+
+def _rule_area_set(round_context: RoundContext, section: str, key: str, default: set[str]) -> set[str]:
+    if load_tactical_rules is None:
+        return set(default)
+    try:
+        rules = load_tactical_rules(round_context.map_name)
+    except Exception:
+        rules = {}
+    section_data = rules.get(section) if isinstance(rules, dict) else None
+    if not isinstance(section_data, dict):
+        return set(default)
+    raw = section_data.get(key)
+    if not isinstance(raw, list):
+        return set(default)
+    return {str(area) for area in raw}
+
+
+def _execute_area_sets(round_context: RoundContext) -> tuple[set[str], set[str]]:
+    return (
+        _rule_area_set(round_context, "site_execute", "a_areas", _A_EXECUTE_AREAS),
+        _rule_area_set(round_context, "site_execute", "b_areas", _B_EXECUTE_AREAS),
+    )
+
+
+def _ct_retake_origins(round_context: RoundContext) -> set[str]:
+    return _rule_area_set(round_context, "retake", "ct_origins", _CT_RETAKE_ORIGINS)
 
 
 def get_alive_counts(round_context: RoundContext, tick_index: int) -> tuple[int, int]:
@@ -210,6 +238,7 @@ def _count_t_in_site_execute_areas(round_context: RoundContext, tick_index: int)
     tick = round_context.ticks[tick_index]
     a_count = 0
     b_count = 0
+    a_execute_areas, b_execute_areas = _execute_area_sets(round_context)
     for player in tick.players_info:
         if not player.get("is_alive", True):
             continue
@@ -220,9 +249,9 @@ def _count_t_in_site_execute_areas(round_context: RoundContext, tick_index: int)
             try:
                 area_info = locate_player_area(player, round_context.map_name)
                 if area_info is not None:
-                    if area_info.name in _A_EXECUTE_AREAS:
+                    if area_info.name in a_execute_areas:
                         a_count += 1
-                    elif area_info.name in _B_EXECUTE_AREAS:
+                    elif area_info.name in b_execute_areas:
                         b_count += 1
             except Exception:
                 pass
@@ -246,6 +275,7 @@ def _count_ct_from_retake_origins(round_context: RoundContext, tick_index: int) 
         return 0
     tick = round_context.ticks[tick_index]
     count = 0
+    retake_origins = _ct_retake_origins(round_context)
     for player in tick.players_info:
         if not player.get("is_alive", True):
             continue
@@ -255,7 +285,7 @@ def _count_ct_from_retake_origins(round_context: RoundContext, tick_index: int) 
         if locate_player_area is not None:
             try:
                 area_info = locate_player_area(player, round_context.map_name)
-                if area_info is not None and area_info.name in _CT_RETAKE_ORIGINS:
+                if area_info is not None and area_info.name in retake_origins:
                     count += 1
             except Exception:
                 pass
@@ -267,6 +297,8 @@ def _has_traded_death_in_site_areas(round_context: RoundContext, tick_index: int
         return False
     tick = round_context.ticks[tick_index]
     tick_time = tick.round_seconds
+    a_execute_areas, b_execute_areas = _execute_area_sets(round_context)
+    site_execute_areas = a_execute_areas | b_execute_areas
     for event in round_context.events:
         if event.event_type != EventType.DEATH:
             continue
@@ -281,7 +313,7 @@ def _has_traded_death_in_site_areas(round_context: RoundContext, tick_index: int
                 if locate_area is not None:
                     try:
                         area = locate_area(round_context.map_name, p.get("X", 0.0), p.get("Y", 0.0))
-                        if area is not None and area.name in _A_EXECUTE_AREAS | _B_EXECUTE_AREAS:
+                        if area is not None and area.name in site_execute_areas:
                             teammates = (
                                 round_context.team2_players if round_context.team1_on_ct else round_context.team1_players
                             )

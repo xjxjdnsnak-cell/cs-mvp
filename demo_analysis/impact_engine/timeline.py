@@ -270,7 +270,8 @@ def generate_match_timeline_markdown(report) -> list[str]:
             for te in ri.tactical_events:
                 label = te.get("label", "")
                 if label in ["valid_entry_sacrifice", "post_plant_discipline_error",
-                             "retake_solo_feed", "key_area_isolated_death"]:
+                             "post_plant_overpeek", "retake_solo_feed",
+                             "key_area_isolated_death"]:
                     events.append(te.get("reason", label))
 
             if events:

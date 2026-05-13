@@ -20,6 +20,7 @@ from flask import (
 
 from demo_analysis import high_level_analysis
 from demo_analysis import llm_summary as llm_summary_module
+from demo_analysis.impact_engine import ImpactEngine
 
 
 os.environ["PYTHONUTF8"] = "1"
@@ -296,7 +297,7 @@ def _run_analysis_job(
         with output_path.open("r", encoding="utf-8") as f:
             raw_results = json.load(f)
 
-        dashboard = high_level_analysis.build_dashboard_payload(raw_results)
+        dashboard = attach_impact_engine_payload(high_level_analysis.build_dashboard_payload(raw_results))
         analysis_id = uuid.uuid4().hex
         ANALYSIS_CACHE[analysis_id] = {
             "dashboard": dashboard,
@@ -323,6 +324,17 @@ def _run_analysis_job(
                 job["phase"] = "失败"
                 job["message"] = "后台任务异常"
                 job["error"] = str(exc)
+
+
+def attach_impact_engine_payload(dashboard: dict[str, Any]) -> dict[str, Any]:
+    """Attach Impact Engine JSON to the web dashboard without breaking legacy output."""
+    try:
+        dashboard["impact_engine"] = ImpactEngine(dashboard).generate_json_output()
+        dashboard.pop("impact_engine_error", None)
+    except Exception as exc:
+        dashboard["impact_engine"] = None
+        dashboard["impact_engine_error"] = str(exc)
+    return dashboard
 
 
 @app.route("/")
@@ -428,6 +440,31 @@ def serve_uploaded_demo(run_id: str):
     """
     if not re.fullmatch(r"[0-9a-fA-F]{8,64}", run_id):
         return jsonify({"error": "bad run_id"}), 400
+    matches = sorted(UPLOAD_DIR.glob(f"{run_id}_*"))
+    if not matches:
+        return jsonify({"error": "demo not found"}), 404
+    target = matches[0]
+    return send_from_directory(
+        UPLOAD_DIR,
+        target.name,
+        as_attachment=False,
+        download_name=target.name.split("_", 1)[-1],
+        mimetype="application/octet-stream",
+    )
+
+
+@app.get("/api/demo_file_by_analysis/<analysis_id>")
+@app.get("/api/demo_file_by_analysis/<analysis_id>.dem")
+def serve_demo_by_analysis_id(analysis_id: str):
+    """Stream a .dem file associated with an analysis_id (JSON-load path)."""
+    if not re.fullmatch(r"[0-9a-fA-F]{8,64}", analysis_id):
+        return jsonify({"error": "bad analysis_id"}), 400
+    entry = ANALYSIS_CACHE.get(analysis_id)
+    if not entry:
+        return jsonify({"error": "analysis not found"}), 404
+    run_id = entry.get("run_id")
+    if not run_id:
+        return jsonify({"error": "no demo associated with this analysis"}), 404
     matches = sorted(UPLOAD_DIR.glob(f"{run_id}_*"))
     if not matches:
         return jsonify({"error": "demo not found"}), 404
@@ -616,6 +653,58 @@ def llm_summary_stream():
             yield f"\n\n[LLM error] {exc}"
 
     return Response(generate_text_stream(), content_type="text/plain; charset=utf-8")
+
+
+@app.post("/api/load_json")
+def load_json_analysis():
+    """Load an existing analysis JSON file directly without re-running model inference."""
+    if "json_file" not in request.files:
+        return jsonify({"error": "请上传 JSON 文件"}), 400
+
+    json_file = request.files["json_file"]
+    if json_file.filename == "":
+        return jsonify({"error": "请上传 JSON 文件"}), 400
+
+    try:
+        raw_results = json.load(json_file.stream)
+    except json.JSONDecodeError as exc:
+        return jsonify({"error": f"JSON 解析失败: {exc}"}), 400
+    except Exception as exc:
+        return jsonify({"error": f"读取文件失败: {exc}"}), 400
+
+    try:
+        dashboard = attach_impact_engine_payload(high_level_analysis.build_dashboard_payload(raw_results))
+    except Exception as exc:
+        return jsonify({"error": f"构建 Dashboard 失败: {exc}"}), 500
+
+    analysis_id = uuid.uuid4().hex
+    cache_entry: dict[str, Any] = {
+        "dashboard": dashboard,
+        "raw": raw_results,
+        "source_file": json_file.filename,
+        "result_file": None,
+        "stdout": "",
+    }
+
+    # Optionally accept a companion DEM file for the 2D viewer
+    dem_file = request.files.get("demo_file")
+    run_id: str | None = None
+    if dem_file and dem_file.filename:
+        run_id = uuid.uuid4().hex
+        upload_path = UPLOAD_DIR / f"{run_id}_{Path(dem_file.filename).name}"
+        dem_file.save(upload_path)
+        cache_entry["run_id"] = run_id
+        cache_entry["demo_path"] = str(upload_path)
+
+    ANALYSIS_CACHE[analysis_id] = cache_entry
+
+    response: dict[str, Any] = {
+        "analysis_id": analysis_id,
+        "dashboard": dashboard,
+    }
+    if run_id:
+        response["run_id"] = run_id
+    return jsonify(response)
 
 
 if __name__ == "__main__":

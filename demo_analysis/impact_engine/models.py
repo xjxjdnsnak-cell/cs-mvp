@@ -180,6 +180,18 @@ class HEImpact:
 
 
 @dataclass
+class HighlightMoment:
+    """A highlight moment (multi-kill, clutch, hard duel, etc.)."""
+    round_id: int
+    tick: float
+    type: str  # "multi_kill", "clutch", "hard_duel", "he_multi_hit", "impactful_opening_kill", "quick_multi_kill"
+    subtype: str  # e.g., "triple_kill", "1v3_clutch", "hard_duel_win"
+    description: str
+    score: float
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class RiskAssessment:
     """Assessment of death risk for a player."""
     risk_type: RiskType
@@ -200,9 +212,11 @@ class PlayerRoundImpact:
     player_name: str
     round_id: int
     team: str
+    player_side: str = ""
 
     kills: list[EventImpact] = field(default_factory=list)
     deaths: list[EventImpact] = field(default_factory=list)
+    assists: list[EventImpact] = field(default_factory=list)
     trades: list[EventImpact] = field(default_factory=list)
     objectives: list[EventImpact] = field(default_factory=list)
     clutch_attempts: list[EventImpact] = field(default_factory=list)
@@ -215,6 +229,9 @@ class PlayerRoundImpact:
     objective_impact: float = 0.0
     clutch_impact: float = 0.0
     utility_impact: float = 0.0
+    map_control_impact: float = 0.0
+    tactical_discipline_impact: float = 0.0
+    tactical_events: list[dict[str, Any]] = field(default_factory=list)
     flash_impact: float = 0.0
     flash_events: list[FlashImpact] = field(default_factory=list)
     smoke_impact: float = 0.0
@@ -310,6 +327,15 @@ class PlayerMatchImpact:
     low_value_hes: int = 0
     harmful_hes: int = 0
 
+    map_control_score: float = 0.0
+    tactical_discipline_score: float = 0.0
+    key_area_deaths: int = 0
+    post_plant_errors: int = 0
+    valid_entry_sacrifices: int = 0
+    retake_errors: int = 0
+    positive_tactical_events: list[dict[str, Any]] = field(default_factory=list)
+    negative_tactical_events: list[dict[str, Any]] = field(default_factory=list)
+
     positive_kill_events: list[dict[str, Any]] = field(default_factory=list)
     negative_death_events: list[dict[str, Any]] = field(default_factory=list)
     positive_flash_events: list[dict[str, Any]] = field(default_factory=list)
@@ -334,6 +360,9 @@ class PlayerMatchImpact:
     kda: tuple[int, int, int] = (0, 0, 0)
     rating: float = 0.0
     rating_0_100: float = 0.0
+    rating_components: dict[str, Any] = field(default_factory=dict)
+
+    highlight_moments: list[HighlightMoment] = field(default_factory=list)
 
     confidence: str = "high"
 
@@ -351,6 +380,7 @@ class ImpactReport:
 
     confidence: str = "high"
     warnings: list[str] = field(default_factory=list)
+    utility_diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
