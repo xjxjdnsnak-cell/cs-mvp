@@ -500,7 +500,7 @@ def analyze_demo():
     if _has_running_jobs():
         return jsonify({"error": "已有任务正在运行，请等待完成后再上传新 demo"}), 409
 
-    cleanup_runtime_artifacts(clear_state=True)
+    cleanup_runtime_artifacts(clear_state=False)
 
     model_path = request.form.get("model_path", "").strip()
     device = request.form.get("device", choose_default_device()).strip()
