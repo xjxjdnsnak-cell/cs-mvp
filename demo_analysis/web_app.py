@@ -354,8 +354,14 @@ def attach_impact_engine_payload(dashboard: dict[str, Any]) -> dict[str, Any]:
 @app.route("/")
 def index():
     # Keep disk usage bounded for local usage: clear stale artifacts on each open.
-    if not _has_running_jobs():
+    # Only clear state if there are no jobs at all (not just no running jobs)
+    with ANALYSIS_LOCK:
+        has_any_jobs = len(ANALYSIS_JOBS) > 0
+    if not has_any_jobs:
         cleanup_runtime_artifacts(clear_state=True)
+    else:
+        # If there are jobs, only clean files but keep job states
+        cleanup_runtime_artifacts(clear_state=False)
 
     model_options = discover_model_paths()
     return render_template(
@@ -729,4 +735,5 @@ def load_json_analysis():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=7860, debug=True)
+    # Use debug=False to prevent auto-reloader from clearing in-memory state
+    app.run(host="127.0.0.1", port=7860, debug=False)
