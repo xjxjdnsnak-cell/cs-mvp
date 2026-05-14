@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import torch
 from flask import (
     Flask,
     Response,
@@ -91,7 +92,7 @@ def cleanup_runtime_artifacts(clear_state: bool = True) -> dict[str, int]:
 
 
 def choose_default_device() -> str:
-    return "cpu"
+    return "cuda" if torch.cuda.is_available() else "cpu"
 
 
 ALL_HEAD_SUBDIRS = ("alive", "nxt_kill", "nxt_death", "win_rate", "duel")
@@ -504,6 +505,13 @@ def analyze_demo():
 
     model_path = request.form.get("model_path", "").strip()
     device = request.form.get("device", choose_default_device()).strip()
+
+    # Validate device selection
+    if device == "cuda" and not torch.cuda.is_available():
+        return jsonify({
+            "error": "CUDA 不可用，请选择 CPU 或安装 CUDA 驱动"
+        }), 400
+
     batch_size = request.form.get("batch_size", "32").strip()
 
     if not model_path:
