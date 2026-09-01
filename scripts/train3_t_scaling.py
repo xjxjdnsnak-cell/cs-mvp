@@ -108,7 +108,7 @@ def load_model_and_cfg(model_dir: str, cfg_path: str, device: torch.device):
         cfg = yaml.safe_load(f)
 
     model = CSModelV3(cfg).to(device)
-    state = torch.load(ckpt, map_location=device, weights_only=False)
+    state = torch.load(ckpt, map_location=device, weights_only=True)
     if isinstance(state, dict) and "model_state_dict" in state:
         model.load_state_dict(state["model_state_dict"])
     else:

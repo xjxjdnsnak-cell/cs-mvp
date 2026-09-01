@@ -445,7 +445,8 @@ function renderLlmOutput(text) {
     if (window.DOMPurify && typeof window.DOMPurify.sanitize === "function") {
       refs.llmOut.innerHTML = window.DOMPurify.sanitize(rawHtml);
     } else {
-      refs.llmOut.innerHTML = rawHtml;
+      // No sanitizer available: fall back to plain text instead of raw HTML.
+      refs.llmOut.textContent = content;
     }
     return;
   }

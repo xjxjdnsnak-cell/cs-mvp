@@ -49,6 +49,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024
 ANALYSIS_CACHE: dict[str, dict[str, Any]] = {}
 ANALYSIS_JOBS: dict[str, dict[str, Any]] = {}
 ANALYSIS_LOCK = threading.Lock()
@@ -493,6 +494,15 @@ def analyze_demo():
     device = request.form.get("device", choose_default_device()).strip()
     batch_size = request.form.get("batch_size", "32").strip()
 
+    if not re.match(r"^cpu$|^cuda(:\d+)?$", device):
+        return jsonify({"error": "device 参数无效，仅支持 cpu 或 cuda(:N)"}), 400
+
+    try:
+        batch_size = int(batch_size)
+    except ValueError:
+        return jsonify({"error": "batch_size 参数无效，必须为整数"}), 400
+    batch_size = max(1, min(512, batch_size))
+
     if not model_path:
         return jsonify({"error": "请先选择模型根目录"}), 400
 
@@ -708,4 +718,4 @@ def load_json_analysis():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=7860, debug=True)
+    app.run(host="127.0.0.1", port=7860, debug=os.environ.get("FLASK_DEBUG") == "1")
