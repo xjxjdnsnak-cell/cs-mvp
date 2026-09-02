@@ -47,6 +47,10 @@ const refs = {
 };
 
 const USER_PREFS_KEY = "csnet.user.preferences.v1";
+// The LLM API key is a secret (audit S-2): keep it in sessionStorage so it
+// survives tab reloads but dies with the tab and never persists to disk-backed
+// localStorage, where any XSS could steal it long-term.
+const LLM_API_KEY_STORAGE_KEY = "csnet.llm.apiKey.v1";
 
 const I18N = {
   zh: {
@@ -115,6 +119,7 @@ const I18N = {
     highlight_impactful_opening_kill: "关键首杀",
     section_llm: "9. 语言模型总结",
     api_key: "API Key",
+    api_key_hint: "API Key 仅保存在当前浏览器标签页（sessionStorage）中，关闭标签页后自动清除，不会写入磁盘持久化存储。",
     model_name: "模型名",
     model_name_placeholder: "gpt-4.1 / deepseek-chat / qwen-max",
     base_url: "Base URL (OpenAI 兼容)",
@@ -227,6 +232,7 @@ const I18N = {
     highlight_impactful_opening_kill: "Impactful Opening Kill",
     section_llm: "9. LLM Summary",
     api_key: "API Key",
+    api_key_hint: "The API key is only kept in this browser tab (sessionStorage) and is cleared when the tab closes; it is never written to persistent storage.",
     model_name: "Model Name",
     model_name_placeholder: "gpt-4.1 / deepseek-chat / qwen-max",
     base_url: "Base URL (OpenAI-compatible)",
@@ -337,6 +343,27 @@ function writeUserPrefs(prefs) {
   }
 }
 
+function getSavedApiKey() {
+  try {
+    const raw = window.sessionStorage.getItem(LLM_API_KEY_STORAGE_KEY);
+    return typeof raw === "string" ? raw : "";
+  } catch {
+    return "";
+  }
+}
+
+function saveApiKey(key) {
+  try {
+    if (key) {
+      window.sessionStorage.setItem(LLM_API_KEY_STORAGE_KEY, key);
+    } else {
+      window.sessionStorage.removeItem(LLM_API_KEY_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage errors (private mode / quota exceeded).
+  }
+}
+
 function getModelPathOptions() {
   const list = document.getElementById("model-path-list");
   if (!list) return [];
@@ -346,12 +373,14 @@ function getModelPathOptions() {
 }
 
 function getCurrentUserPrefs() {
+  // Note: llm_api_key is intentionally NOT here — it is stored separately in
+  // sessionStorage (see LLM_API_KEY_STORAGE_KEY) and never persisted to
+  // localStorage.
   return {
     app_language: refs.appLanguage?.value || "zh",
     model_path: refs.modelPath?.value || "",
     device: refs.device?.value || "",
     batch_size: refs.batchSize?.value || "",
-    llm_api_key: refs.llmApiKey?.value || "",
     llm_model: refs.llmModel?.value || "",
     llm_base_url: refs.llmBaseUrl?.value || "",
     llm_temperature: refs.llmTemperature?.value || "",
@@ -361,10 +390,17 @@ function getCurrentUserPrefs() {
 
 function saveUserPrefs() {
   writeUserPrefs(getCurrentUserPrefs());
+  saveApiKey(refs.llmApiKey?.value.trim() || "");
 }
 
 function restoreUserPrefs() {
   const prefs = readUserPrefs();
+
+  // Scrub any API key persisted by older versions into localStorage (audit S-2).
+  if (prefs.llm_api_key !== undefined) {
+    delete prefs.llm_api_key;
+    writeUserPrefs(prefs);
+  }
 
   const savedLang =
     typeof prefs.app_language === "string"
@@ -392,8 +428,8 @@ function restoreUserPrefs() {
   if (typeof prefs.batch_size === "string" && refs.batchSize) {
     refs.batchSize.value = prefs.batch_size;
   }
-  if (typeof prefs.llm_api_key === "string" && refs.llmApiKey) {
-    refs.llmApiKey.value = prefs.llm_api_key;
+  if (refs.llmApiKey) {
+    refs.llmApiKey.value = getSavedApiKey();
   }
   if (typeof prefs.llm_model === "string" && refs.llmModel) {
     refs.llmModel.value = prefs.llm_model;
@@ -557,9 +593,9 @@ function withTermHelp(label, helpText) {
 
 function playerCell(player, row) {
   const badge = row.badge
-    ? `<span class="player-badge ${row.badge.toLowerCase()}">${row.badge}</span>`
+    ? `<span class="player-badge ${escapeAttr(row.badge.toLowerCase())}">${escapeAttr(row.badge)}</span>`
     : "";
-  return `<span class="player-cell">${badge}<span>${player}</span></span>`;
+  return `<span class="player-cell">${badge}<span>${escapeAttr(player)}</span></span>`;
 }
 
 function teamForPlayer(round, player) {
@@ -579,7 +615,7 @@ function renderTable(container, rows, columns) {
     .map((row) => {
       const tds = columns
         .map((c) => {
-          const value = c.render ? c.render(row[c.key], row) : row[c.key];
+          const value = c.render ? c.render(row[c.key], row) : escapeAttr(row[c.key]);
           return `<td>${value}</td>`;
         })
         .join("");
@@ -600,7 +636,7 @@ function buildTableHtml(rows, columns) {
     .map((row) => {
       const tds = columns
         .map((c) => {
-          const value = c.render ? c.render(row[c.key], row) : row[c.key];
+          const value = c.render ? c.render(row[c.key], row) : escapeAttr(row[c.key]);
           return `<td>${value}</td>`;
         })
         .join("");
@@ -683,8 +719,8 @@ function renderHoverContrib(round, index) {
     .sort((a, b) => b.total_contribution - a.total_contribution);
 
   renderTeamSplitTables(refs.hoverPlayerStats, rows, [
-    { key: "player", label: t("col_player"), render: (v) => `<span class="table-meta-text">${v}</span>` },
-    { key: "team", label: t("col_team"), render: (v) => `<span class="table-meta-text">${v}</span>` },
+    { key: "player", label: t("col_player"), render: (v) => `<span class="table-meta-text">${escapeAttr(v)}</span>` },
+    { key: "team", label: t("col_team"), render: (v) => `<span class="table-meta-text">${escapeAttr(v)}</span>` },
     { key: "kill_contribution", label: t("col_kill"), render: (v) => contributionCell(v) },
     { key: "tactical_contribution", label: t("col_tactical"), render: (v) => contributionCell(v) },
     { key: "total_contribution", label: t("col_total"), render: (v) => contributionCell(v) },
@@ -698,8 +734,8 @@ function renderRoundSummary(round) {
   }));
 
   renderTeamSplitTables(refs.roundSummaryTable, rows, [
-    { key: "player", label: t("col_player"), render: (v) => `<span class="table-meta-text">${v}</span>` },
-    { key: "team", label: t("col_team"), render: (v) => `<span class="table-meta-text">${v}</span>` },
+    { key: "player", label: t("col_player"), render: (v) => `<span class="table-meta-text">${escapeAttr(v)}</span>` },
+    { key: "team", label: t("col_team"), render: (v) => `<span class="table-meta-text">${escapeAttr(v)}</span>` },
     { key: "kill_contribution", label: t("col_kill"), render: (v) => contributionCell(v) },
     { key: "tactical_contribution", label: t("col_tactical"), render: (v) => contributionCell(v) },
     { key: "total_contribution", label: t("col_total"), render: (v) => contributionCell(v) },
@@ -722,11 +758,11 @@ function renderOverallSummary() {
 
   renderTeamSplitTables(refs.overallSummaryTable, overall, [
     { key: "player", label: t("col_player"), render: (v, row) => `<span class="table-meta-text">${playerCell(v, row)}</span>` },
-    { key: "team", label: t("col_team"), render: (v) => `<span class="table-meta-text">${v}</span>` },
+    { key: "team", label: t("col_team"), render: (v) => `<span class="table-meta-text">${escapeAttr(v)}</span>` },
     { key: "avg_kill_contribution", label: t("col_avg_kill"), render: (v) => contributionCell(v) },
     { key: "avg_tactical_contribution", label: t("col_avg_tactical"), render: (v) => contributionCell(v) },
     { key: "avg_total_contribution", label: t("col_avg_total"), render: (v) => contributionCell(v) },
-    { key: "rounds", label: t("col_rounds"), render: (v) => `<span class="mono table-meta-text">${v}</span>` },
+    { key: "rounds", label: t("col_rounds"), render: (v) => `<span class="mono table-meta-text">${escapeAttr(v)}</span>` },
   ], "stack");
 
   refs.matchBadge.textContent = t("match_badge", {
@@ -743,7 +779,8 @@ function renderRoundTabs() {
   refs.roundTabs.innerHTML = rounds
     .map((rd, idx) => {
       const active = idx === state.selectedRoundIndex ? "active" : "";
-      return `<button class="tab-btn ${active}" data-round-index="${idx}">${t("round_tab", { round: rd.round_id, winner: localizeWinner(rd.winner) })}</button>`;
+      // round_id comes from the uploaded dashboard/demo and must be escaped.
+      return `<button class="tab-btn ${active}" data-round-index="${idx}">${escapeAttr(t("round_tab", { round: rd.round_id, winner: localizeWinner(rd.winner) }))}</button>`;
     })
     .join("");
 
@@ -786,7 +823,7 @@ function renderCurrentRound() {
         renderHoverContrib(round, idx);
 
         return [
-          `<strong>${t("chart_round")} ${round.round_id} · ${sec.toFixed(2)}s</strong>`,
+          `<strong>${t("chart_round")} ${escapeAttr(round.round_id)} · ${sec.toFixed(2)}s</strong>`,
           `${t("chart_team1_wr")}: ${toPercent(wr)}`,
         ].join("<br/>");
       },
@@ -842,11 +879,12 @@ function renderCurrentRound() {
           trigger: "item",
           formatter: (param) => {
             const d = param.data;
+            // killer/victim/weapon/team come from demo parsing or uploaded JSON.
             return [
-              `<strong>${d.killer} (${d.killerTeam})</strong>`,
-              `${t("chart_kill")}: ${d.victim}`,
+              `<strong>${escapeAttr(d.killer)} (${escapeAttr(d.killerTeam)})</strong>`,
+              `${t("chart_kill")}: ${escapeAttr(d.victim)}`,
               `${t("chart_time")}: ${d.value[0].toFixed(2)}s`,
-              `${t("chart_weapon")}: ${d.weapon}`,
+              `${t("chart_weapon")}: ${escapeAttr(d.weapon)}`,
               `${t("chart_impact")}: ${n4(d.kill_impact)}`,
             ].join("<br/>");
           },
@@ -932,10 +970,10 @@ function renderAdvancedMetrics() {
   }
 
   const killCols = [
-    { key: "round", label: t("col_round"), render: (v) => `<span class="mono table-meta-text">${v}</span>` },
+    { key: "round", label: t("col_round"), render: (v) => `<span class="mono table-meta-text">${escapeAttr(v)}</span>` },
     { key: "round_seconds", label: t("col_second"), render: (v) => `<span class="mono table-meta-text">${fmtFloat3(v)}</span>` },
-    { key: "attacker", label: t("col_attacker"), render: (v) => `<span class="table-meta-text">${v}</span>` },
-    { key: "victim", label: t("col_victim"), render: (v) => `<span class="table-meta-text">${v}</span>` },
+    { key: "attacker", label: t("col_attacker"), render: (v) => `<span class="table-meta-text">${escapeAttr(v)}</span>` },
+    { key: "victim", label: t("col_victim"), render: (v) => `<span class="table-meta-text">${escapeAttr(v)}</span>` },
     { key: "swing", label: withTermHelp(t("col_swing"), t("term_swing_help")), render: (v) => contributionCell(v) },
     { key: "difficulty", label: withTermHelp(t("col_difficulty"), t("term_difficulty_help")), render: (v) => difficultyCell(v) },
   ];
@@ -951,8 +989,8 @@ function renderAdvancedMetrics() {
   });
 
   const playerCols = [
-    { key: "player", label: t("col_player"), render: (v) => `<span class="table-meta-text">${v}</span>` },
-    { key: "team", label: t("col_team"), render: (v) => `<span class="table-meta-text">${v}</span>` },
+    { key: "player", label: t("col_player"), render: (v) => `<span class="table-meta-text">${escapeAttr(v)}</span>` },
+    { key: "team", label: t("col_team"), render: (v) => `<span class="table-meta-text">${escapeAttr(v)}</span>` },
     { key: "avg_survive_chance", label: withTermHelp(t("col_avg_survive"), t("term_avg_survive_help")), render: (v) => magnitudeCell(v, { scale: 0.5, polarity: "good" }) },
     { key: "hard_win_rate", label: withTermHelp(t("col_hard_win"), t("term_hard_win_help")), render: (v) => rateCell(v, { center: 0.5, scale: 0.5 }) },
     { key: "easy_win_rate", label: withTermHelp(t("col_easy_win"), t("term_easy_win_help")), render: (v) => rateCell(v, { center: 0.5, scale: 0.5 }) },
@@ -1118,7 +1156,7 @@ function renderHighlightMoments(player) {
     html += `<div class="moment-badge" data-type="${escapeAttr(m.type)}" title="${escapeAttr(detailText)}">`;
     html += `<span class="moment-type">${escapeAttr(typeName)}</span>`;
     html += `<span class="moment-subtype">${escapeAttr(subtypeName)}</span>`;
-    html += `<span class="moment-round">R${m.round}</span>`;
+    html += `<span class="moment-round">R${escapeAttr(m.round)}</span>`;
     html += `<span class="moment-score">${Number(m.score || 0).toFixed(1)}</span>`;
     html += `</div>`;
   });
@@ -1204,9 +1242,9 @@ function renderImpactDiagnostics(impact) {
 
   const countTable = buildTableHtml(countRows, [
     { key: "name", label: "类型" },
-    { key: "total", label: "找到事件", render: (v) => `<span class="mono table-meta-text">${v}</span>` },
-    { key: "attributed", label: "成功归因", render: (v) => `<span class="mono table-meta-text">${v}</span>` },
-    { key: "unknown", label: "Unknown", render: (v) => `<span class="mono table-meta-text">${v}</span>` },
+    { key: "total", label: "找到事件", render: (v) => `<span class="mono table-meta-text">${escapeAttr(v)}</span>` },
+    { key: "attributed", label: "成功归因", render: (v) => `<span class="mono table-meta-text">${escapeAttr(v)}</span>` },
+    { key: "unknown", label: "Unknown", render: (v) => `<span class="mono table-meta-text">${escapeAttr(v)}</span>` },
   ]);
 
   const details = [
@@ -1270,7 +1308,7 @@ function renderImpactEnginePanel() {
     { key: "fire_score", label: "火", render: (v) => impactScoreCell(v) },
     { key: "he_score", label: "HE", render: (v) => impactScoreCell(v) },
     { key: "utility_impact", label: "道具总分", render: (v) => impactScoreCell(v) },
-    { key: "utility_event_count", label: "事件", render: (v) => `<span class="mono table-meta-text">${v ?? 0}</span>` },
+    { key: "utility_event_count", label: "事件", render: (v) => `<span class="mono table-meta-text">${escapeAttr(v ?? 0)}</span>` },
     { key: "map_control_score", label: "地图控制", render: (v) => impactScoreCell(v) },
     { key: "tactical_discipline_score", label: "战术纪律", render: (v) => impactScoreCell(v) },
   ]);

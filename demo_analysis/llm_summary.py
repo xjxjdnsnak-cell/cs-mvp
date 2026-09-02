@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Iterator
 
@@ -16,6 +17,72 @@ MAX_TIMELINE_EVENTS_PER_ROUND = 12
 MAX_DETAILED_TACTICAL_ROUNDS = 8
 MIN_DETAILED_SWING_PCT = 15.0
 MAX_BRIEF_TIMELINE_EVENTS_PER_ROUND = 2
+
+# Prompt-injection hygiene (audit S-9): player/team/weapon/map names and other
+# strings parsed from a demo (or an uploaded analysis.json) are attacker
+# controlled. Before they enter an LLM prompt, strip CR/LF and C0 control
+# characters, collapse whitespace, and cap the length, so a crafted player name
+# cannot break out of the whitelist line or smuggle multi-line instructions.
+MAX_PROMPT_STRING_LENGTH = 40
+
+# Payload keys whose string values originate from demo parsing / uploads.
+# Everything else (generated labels, summary hints, numeric fields) is left
+# untouched; dict keys are not sanitized because json.dumps escapes control
+# characters in them anyway.
+_UNTRUSTED_PROMPT_STRING_KEYS = frozenset(
+    {
+        "player",
+        "team",
+        "killer",
+        "victim",
+        "weapon",
+        "assister",
+        "attacker",
+        "mvp",
+        "svp",
+        "map_name",
+        "name",
+        "side",
+        "winner",
+        "winner_label",
+        "winner_side",
+        "team1_side",
+        "team2_side",
+        "team1_players",
+        "team2_players",
+        "all_players",
+    }
+)
+
+
+def sanitize_prompt_text(value: Any, max_length: int = MAX_PROMPT_STRING_LENGTH) -> Any:
+    """Clean a demo-derived string before it enters an LLM prompt (audit S-9).
+
+    Non-string values pass through unchanged; lists are sanitized element-wise.
+    """
+    if isinstance(value, str):
+        cleaned = re.sub(r"[\x00-\x1f\x7f]", " ", value)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned[:max_length]
+    if isinstance(value, list):
+        return [sanitize_prompt_text(item, max_length) for item in value]
+    return value
+
+
+def _sanitize_llm_prompt_strings(node: Any) -> Any:
+    """Recursively sanitize untrusted string fields of the LLM payload."""
+    if isinstance(node, dict):
+        return {
+            key: (
+                sanitize_prompt_text(value)
+                if isinstance(key, str) and key in _UNTRUSTED_PROMPT_STRING_KEYS
+                else _sanitize_llm_prompt_strings(value)
+            )
+            for key, value in node.items()
+        }
+    if isinstance(node, list):
+        return [_sanitize_llm_prompt_strings(item) for item in node]
+    return node
 
 ZH_SYSTEM_PROMPT_TEMPLATE = """你是专业的 CS2 战术分析师，请输出中文复盘。
 
@@ -218,9 +285,11 @@ def build_llm_payload(
     def brief_event_text(event: dict[str, Any]) -> str:
         if event.get("type") == "kill":
             facts = event.get("summary_facts") or {}
-            killer = event.get("killer", facts.get("killer", "Unknown"))
-            victim = event.get("victim", facts.get("victim", "Unknown"))
-            weapon = event.get("weapon", facts.get("weapon", "Unknown"))
+            # Sanitize at the source so the generated hint embeds clean names
+            # too (audit S-9).
+            killer = sanitize_prompt_text(event.get("killer", facts.get("killer", "Unknown")))
+            victim = sanitize_prompt_text(event.get("victim", facts.get("victim", "Unknown")))
+            weapon = sanitize_prompt_text(event.get("weapon", facts.get("weapon", "Unknown")))
             swing = safe_float(
                 event.get(
                     "killer_team_swing_pct",
@@ -636,9 +705,18 @@ def build_llm_prompts(llm_data: dict[str, Any], language: str) -> tuple[str, str
     if lang not in {"zh", "en"}:
         lang = "zh"
 
+    # Sanitize demo-derived strings (audit S-9) so both the whitelist
+    # interpolated into the system prompt and the JSON body below carry clean
+    # values (no newlines/control chars, bounded length).
+    llm_data = _sanitize_llm_prompt_strings(llm_data)
+
     whitelist = llm_data.get("whitelist", {}) or {}
-    team1_players = whitelist.get("team1_players", []) or []
-    team2_players = whitelist.get("team2_players", []) or []
+    team1_players = [
+        p for p in (whitelist.get("team1_players", []) or []) if isinstance(p, str) and p
+    ]
+    team2_players = [
+        p for p in (whitelist.get("team2_players", []) or []) if isinstance(p, str) and p
+    ]
     valid_round_ids = whitelist.get("valid_round_ids", []) or []
 
     all_players = sorted(set(team1_players) | set(team2_players))

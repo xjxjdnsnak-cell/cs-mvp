@@ -51,6 +51,35 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024
+
+# Security headers (audit S-5). CSP notes:
+# - script-src: app.js / viewer bundle / worker.js are same-origin; echarts,
+#   marked and dompurify come from cdn.jsdelivr.net. `unsafe-eval` is required
+#   because echarts@5 (cdn.jsdelivr.net/npm/echarts@5) contains a
+#   `new Function("return (...)")` call; `wasm-unsafe-eval` is required for the
+#   viewer's 17MB Go WASM parser. Neither page uses inline <script>, so inline
+#   script execution (the XSS vector) stays blocked.
+# - style-src: app.js and ECharts set inline style attributes/elements and the
+#   React viewer injects <style> tags ('unsafe-inline'); CSS comes from self,
+#   cdn.jsdelivr.net, fonts.googleapis.com (both pages) and
+#   www.w3schools.com/w3css (viewer only).
+# - font-src: JetBrains Mono / Material Icons from fonts.gstatic.com, plus
+#   self-hosted woff2 files under /viewer/assets/ and data: fonts.
+# - img-src: logo + map overviews from self, ECharts/data URIs, blob: previews.
+# - connect-src: the apps only fetch same-origin APIs and demo files.
+CONTENT_SECURITY_POLICY = "; ".join(
+    [
+        "default-src 'self'",
+        "script-src 'self' https://cdn.jsdelivr.net 'unsafe-eval' 'wasm-unsafe-eval'",
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com https://www.w3schools.com",
+        "font-src 'self' data: https://fonts.gstatic.com",
+        "img-src 'self' data: blob: https:",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+    ]
+)
 # Bounded to the most recent analysis ids (audit P-3): each entry keeps the
 # dashboard + raw payload in memory, so an unbounded cache grew for the whole
 # session lifetime.
@@ -60,6 +89,16 @@ ANALYSIS_JOBS: dict[str, dict[str, Any]] = {}
 ANALYSIS_LOCK = threading.Lock()
 
 VIEWER_DIR = Path(__file__).resolve().parent / "static" / "viewer"
+
+
+@app.after_request
+def set_security_headers(response: Response) -> Response:
+    """Attach baseline security headers to every response (audit S-5)."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    return response
 
 
 def _prune_analysis_cache_locked() -> None:

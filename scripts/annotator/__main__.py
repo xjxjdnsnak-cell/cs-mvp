@@ -21,6 +21,9 @@ app = Flask(
     static_folder=str(ANNOTATOR_DIR / "static"),
     static_url_path="/tool_static",
 )
+# Bound request size (audit S-4): /api/demo accepts full .dem uploads, so use
+# the same 512 MB cap as demo_analysis.web_app.
+app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024
 
 
 def jsonable(value: Any) -> Any:

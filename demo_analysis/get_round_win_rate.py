@@ -393,7 +393,10 @@ def compute_duel_matrix(model, cfg, batch, alive_mask, team_ct, team_t):
     if not team_ct or not team_t:
         return None
 
-    with torch.no_grad():
+    # inference_mode (audit P-5): pure inference, no autograd bookkeeping.
+    # Nested inside run_round_inference's inference_mode block, so the in-place
+    # duel-matrix fixups after this context are still covered.
+    with torch.inference_mode():
         x = model.encode_tick(batch)
         x = model.space_tf(x, batch["pad_mask"], batch["dead_mask"])
 
@@ -441,7 +444,7 @@ def run_round_inference(round_states, models, cfgs, weapon2idx, projectile2idx, 
             for j in range(min(N_PLAYERS, len(players))):
                 alive_mask[i, j] = bool(players[j].get("is_alive", False))
 
-        with torch.no_grad():
+        with torch.inference_mode():
             win_logits, _ = models["win"]({**sub, "label": torch.zeros(B, device=device)})
             win_logits = apply_temperature_scaling(win_logits, cfgs["win"])
             win_probs = torch.sigmoid(win_logits).cpu().tolist()

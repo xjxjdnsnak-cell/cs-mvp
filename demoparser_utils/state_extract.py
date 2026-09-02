@@ -592,9 +592,6 @@ def extract_states_by_group(demo_path: str, ticks_group: list[list[int]]) -> lis
 
     df_end = parser.parse_event("round_end")
 
-    round_end_ticks = df_end['tick'].tolist()
-    df_round_end_ticks = parser.parse_ticks(wanted_props=["health", "kills_this_round", "deaths_this_round", "assists_this_round", "damage_this_round", "team_num"], ticks=round_end_ticks)
-
     for index, row in df_end.iterrows():
 
         # print(f"End at tick {row['tick']}. Index: {index}")

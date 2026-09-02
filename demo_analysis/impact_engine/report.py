@@ -736,7 +736,7 @@ def generate_tactical_section(player: PlayerMatchImpact) -> list[str]:
         return []
 
     lines = [
-        "### 地图战术表现 / 鍦板浘鎴樻湳琛ㄧ幇",
+        "### 地图战术表现",
         "",
         f"- 地图控制分: {player.map_control_score:.1f}",
         f"- 战术纪律分: {player.tactical_discipline_score:.1f}",
