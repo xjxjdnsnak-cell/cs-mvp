@@ -875,8 +875,10 @@ def main():
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     results = to_jsonable(results)
+    # Compact dump (audit P-3): indent=2 roughly doubled the size of the
+    # future_kills/future_damage-heavy analysis.json.
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
+        json.dump(results, f, ensure_ascii=False)
 
     print(f"Results saved to {output_path}")
 

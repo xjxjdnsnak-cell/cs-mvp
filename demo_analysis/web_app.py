@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import uuid
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -50,23 +51,44 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024
-ANALYSIS_CACHE: dict[str, dict[str, Any]] = {}
+# Bounded to the most recent analysis ids (audit P-3): each entry keeps the
+# dashboard + raw payload in memory, so an unbounded cache grew for the whole
+# session lifetime.
+ANALYSIS_CACHE: OrderedDict[str, dict[str, Any]] = OrderedDict()
+ANALYSIS_CACHE_MAX_ENTRIES = 3
 ANALYSIS_JOBS: dict[str, dict[str, Any]] = {}
 ANALYSIS_LOCK = threading.Lock()
 
 VIEWER_DIR = Path(__file__).resolve().parent / "static" / "viewer"
 
 
+def _prune_analysis_cache_locked() -> None:
+    """Evict the oldest analysis ids while over the cache bound (lock held)."""
+    while len(ANALYSIS_CACHE) > ANALYSIS_CACHE_MAX_ENTRIES:
+        ANALYSIS_CACHE.popitem(last=False)
+
+
+def store_analysis_cache(analysis_id: str, entry: dict[str, Any]) -> None:
+    """Insert into ANALYSIS_CACHE under ANALYSIS_LOCK, evicting oldest ids."""
+    with ANALYSIS_LOCK:
+        ANALYSIS_CACHE[analysis_id] = entry
+        _prune_analysis_cache_locked()
+
+
 def _has_running_jobs() -> bool:
     with ANALYSIS_LOCK:
-        for job in ANALYSIS_JOBS.values():
-            if job.get("status") in {"queued", "running"}:
-                return True
+        return _has_running_jobs_locked()
+
+
+def _has_running_jobs_locked() -> bool:
+    for job in ANALYSIS_JOBS.values():
+        if job.get("status") in {"queued", "running"}:
+            return True
     return False
 
 
-def cleanup_runtime_artifacts(clear_state: bool = True) -> dict[str, int]:
-    """Delete stale uploaded demos/results and optionally reset in-memory state."""
+def _delete_runtime_files() -> dict[str, int]:
+    """Delete uploaded demos and generated outputs; return the removed counts."""
     removed_uploads = 0
     removed_outputs = 0
 
@@ -80,15 +102,39 @@ def cleanup_runtime_artifacts(clear_state: bool = True) -> dict[str, int]:
             path.unlink(missing_ok=True)
             removed_outputs += 1
 
-    if clear_state:
-        with ANALYSIS_LOCK:
-            ANALYSIS_JOBS.clear()
-        ANALYSIS_CACHE.clear()
-
     return {
         "uploads": removed_uploads,
         "outputs": removed_outputs,
     }
+
+
+def _reset_runtime_state_locked() -> None:
+    """Reset in-memory job/cache state (ANALYSIS_LOCK held)."""
+    ANALYSIS_JOBS.clear()
+    ANALYSIS_CACHE.clear()
+
+
+def _reset_runtime_if_idle_locked() -> bool:
+    """(ANALYSIS_LOCK held) Clean artifacts+state unless jobs are running.
+
+    Returns True when the cleanup happened. Holding the lock across both the
+    running-jobs check and the deletions closes the check-then-delete race
+    where a job submitted concurrently lost its freshly uploaded demo.
+    """
+    if _has_running_jobs_locked():
+        return False
+    _delete_runtime_files()
+    _reset_runtime_state_locked()
+    return True
+
+
+def cleanup_runtime_artifacts(clear_state: bool = True) -> dict[str, int]:
+    """Delete stale uploaded demos/results and optionally reset in-memory state."""
+    counts = _delete_runtime_files()
+    if clear_state:
+        with ANALYSIS_LOCK:
+            _reset_runtime_state_locked()
+    return counts
 
 
 def choose_default_device() -> str:
@@ -300,13 +346,13 @@ def _run_analysis_job(
 
         dashboard = attach_impact_engine_payload(high_level_analysis.build_dashboard_payload(raw_results))
         analysis_id = uuid.uuid4().hex
-        ANALYSIS_CACHE[analysis_id] = {
+        store_analysis_cache(analysis_id, {
             "dashboard": dashboard,
             "raw": raw_results,
             "source_file": str(upload_path),
             "result_file": str(output_path),
             "stdout": "".join(stdout_lines),
-        }
+        })
 
         with ANALYSIS_LOCK:
             job = ANALYSIS_JOBS.get(job_id)
@@ -340,9 +386,11 @@ def attach_impact_engine_payload(dashboard: dict[str, Any]) -> dict[str, Any]:
 
 @app.route("/")
 def index():
-    # Keep disk usage bounded for local usage: clear stale artifacts on each open.
-    if not _has_running_jobs():
-        cleanup_runtime_artifacts(clear_state=True)
+    # Keep disk usage bounded for local usage: clear stale artifacts on each
+    # open. The running-jobs check and the deletions share ANALYSIS_LOCK with
+    # job registration, so concurrent submissions cannot lose their uploads.
+    with ANALYSIS_LOCK:
+        _reset_runtime_if_idle_locked()
 
     model_options = discover_model_paths()
     return render_template(
@@ -485,11 +533,6 @@ def analyze_demo():
     if dem_file is None or dem_file.filename == "":
         return jsonify({"error": "请上传 .dem 文件"}), 400
 
-    if _has_running_jobs():
-        return jsonify({"error": "已有任务正在运行，请等待完成后再上传新 demo"}), 409
-
-    cleanup_runtime_artifacts(clear_state=True)
-
     model_path = request.form.get("model_path", "").strip()
     device = request.form.get("device", choose_default_device()).strip()
     batch_size = request.form.get("batch_size", "32").strip()
@@ -521,10 +564,17 @@ def analyze_demo():
     run_id = uuid.uuid4().hex
     upload_path = UPLOAD_DIR / f"{run_id}_{Path(dem_file.filename).name}"
     output_path = OUTPUT_DIR / f"{run_id}.json"
-    dem_file.save(upload_path)
-
     job_id = uuid.uuid4().hex
+
     with ANALYSIS_LOCK:
+        # Atomic submission (audit P-6): the idle-jobs check, the artifact
+        # cleanup and the upload save + job registration all share the lock the
+        # homepage cleanup uses, so a just-saved demo can no longer be deleted
+        # by a cleanup running between save and registration.
+        if _has_running_jobs_locked():
+            return jsonify({"error": "已有任务正在运行，请等待完成后再上传新 demo"}), 409
+        _reset_runtime_if_idle_locked()
+        dem_file.save(upload_path)
         ANALYSIS_JOBS[job_id] = {
             "status": "queued",
             "phase": "排队中",
@@ -706,7 +756,7 @@ def load_json_analysis():
         cache_entry["run_id"] = run_id
         cache_entry["demo_path"] = str(upload_path)
 
-    ANALYSIS_CACHE[analysis_id] = cache_entry
+    store_analysis_cache(analysis_id, cache_entry)
 
     response: dict[str, Any] = {
         "analysis_id": analysis_id,

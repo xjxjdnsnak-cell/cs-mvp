@@ -94,6 +94,10 @@ class ImpactEngine:
         all_player_labels: dict[str, list[str]] = {}
         player_risk_map: dict[str, dict[str, RiskAssessment]] = {}
         utility_diagnostics = empty_utility_diagnostics()
+        # Build each round's context once (audit P-4) and reuse it for the
+        # match-level pass below; build_round_context is a pure function of the
+        # round data, so the second build loop it replaces was pure overhead.
+        round_contexts: list[RoundContext] = []
 
         team1_players = self.match_info.get("team1_players", [])
         team2_players = self.match_info.get("team2_players", [])
@@ -108,6 +112,7 @@ class ImpactEngine:
                 team1_players,
                 team2_players
             )
+            round_contexts.append(round_context)
             utility_diagnostics = merge_utility_diagnostics(
                 utility_diagnostics,
                 build_round_utility_diagnostics(round_context, team1_players + team2_players),
@@ -163,14 +168,6 @@ class ImpactEngine:
                         if player not in all_player_labels:
                             all_player_labels[player] = []
                         all_player_labels[player].append(label_name)
-
-        round_contexts: list[RoundContext] = []
-        for round_data in self.rounds:
-            round_contexts.append(build_round_context(
-                round_data,
-                team1_players,
-                team2_players
-            ))
 
         for player, impact in player_impact_map.items():
             updated = calculate_player_match_impact(

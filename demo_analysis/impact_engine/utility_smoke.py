@@ -1,6 +1,7 @@
 """Rule-based smoke grenade impact scoring."""
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -215,15 +216,28 @@ def smoke_inventory_count(inventory: Any) -> int:
     return sum(1 for item in inventory if "smoke" in str(item).lower())
 
 
-def load_smoke_targets(round_context: RoundContext) -> dict[str, SmokeTarget]:
-    map_name = get_round_map_name(round_context)
+@lru_cache(maxsize=None)
+def _load_callout_yaml(map_name: str | None) -> dict[str, Any] | None:
+    """Parsed callout YAML for a map, cached per map name (audit P-4).
+
+    Mirrors map_tactics.load_map_areas: the map knowledge was re-read from disk
+    on every per-player scoring call; long-lived processes now keep the parsed
+    YAML until restart.
+    """
     if not map_name:
-        return {}
+        return None
     cfg_path = Path(__file__).resolve().parents[2] / "config" / "callouts" / f"{map_name}.yaml"
     if not cfg_path.exists():
-        return {}
+        return None
     with cfg_path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
+        return yaml.safe_load(f) or {}
+
+
+def load_smoke_targets(round_context: RoundContext) -> dict[str, SmokeTarget]:
+    map_name = get_round_map_name(round_context)
+    data = _load_callout_yaml(map_name)
+    if data is None:
+        return {}
     raw_targets = data.get("smoke_targets") or {}
     targets = {}
     for name, raw in raw_targets.items():

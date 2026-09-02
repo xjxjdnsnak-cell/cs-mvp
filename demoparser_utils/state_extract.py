@@ -5,15 +5,91 @@ Ouput: List of state dictionaries for each tick
 import snappy
 import json
 import numpy as np
+from bisect import bisect_right
 from demoparser2 import DemoParser
 
-def find_last_carrier_tick(target_tick, bomb_carrier_by_tick, round):
-    for t in range(target_tick, -1, -1):  
-        if t in bomb_carrier_by_tick:  
-            if round != bomb_carrier_by_tick[t][4]:
-                break
-            return [bomb_carrier_by_tick[t][1], bomb_carrier_by_tick[t][2], bomb_carrier_by_tick[t][3]]
-    return None
+def find_last_carrier_tick(target_tick, bomb_carrier_by_tick, round, sorted_ticks=None):
+    """[X, Y, Z] of the C4 carrier at the nearest recorded tick <= target_tick
+    within `round`, or None.
+
+    Semantics (unchanged): scanning ticks downwards, the FIRST recorded tick
+    decides — same round returns its carrier, a different round stops the
+    search (None); ticks without a record are skipped.
+
+    `sorted_ticks` is the pre-sorted list of the map's keys; supplying it makes
+    the lookup O(log n) instead of a linear integer scan, with identical
+    results (the first record met while scanning down is exactly the greatest
+    recorded key <= target_tick).
+    """
+    if sorted_ticks is None:
+        sorted_ticks = sorted(bomb_carrier_by_tick)
+    idx = bisect_right(sorted_ticks, target_tick) - 1
+    if idx < 0:
+        return None
+    carrier = bomb_carrier_by_tick[sorted_ticks[idx]]
+    if round != carrier[4]:
+        return None
+    return [carrier[1], carrier[2], carrier[3]]
+
+def build_bomb_carrier_map(df_players) -> dict:
+    """tick -> (steamid, X, Y, Z, round) for rows whose inventory holds the C4.
+
+    Built from an already-parsed player frame (the sampled ticks) instead of a
+    dedicated parse of every tick from 0 to max_tick (audit P-1). When several
+    rows of the same tick carry the C4, the last row wins — same as the legacy
+    full-range scan.
+    """
+    bomb_carrier_by_tick = {}
+    for row in df_players.itertuples():
+        if isinstance(row.inventory, list) and "C4 Explosive" in row.inventory:
+            bomb_carrier_by_tick[row.tick] = (row.steamid, row.X, row.Y, row.Z, row.total_rounds_played)
+    return bomb_carrier_by_tick
+
+def _sorted_by_tick(df):
+    """Return `df` sorted by 'tick' (stable) so per-tick rows are contiguous.
+
+    The stable sort keeps the within-tick row order, so per-tick slices are
+    identical to the previous boolean-mask filtering.
+    """
+    if "tick" not in df.columns or df["tick"].is_monotonic_increasing:
+        return df
+    return df.sort_values("tick", kind="stable")
+
+def _per_tick_index(df):
+    """(df_sorted_by_tick, tick_values) for O(log n) per-tick row lookup."""
+    df = _sorted_by_tick(df)
+    return df, df["tick"].to_numpy()
+
+def _rows_at_tick(df, tick_values, tick):
+    """Rows of a tick-sorted frame whose 'tick' equals `tick`."""
+    lo = int(np.searchsorted(tick_values, tick, side="left"))
+    hi = int(np.searchsorted(tick_values, tick, side="right"))
+    return df.iloc[lo:hi]
+
+def _rows_after_tick(df, tick_values, tick):
+    """Rows of a tick-sorted frame whose 'tick' is strictly greater than `tick`."""
+    lo = int(np.searchsorted(tick_values, tick, side="right"))
+    return df.iloc[lo:]
+
+def _round_event_index(df, round_col: str = "total_rounds_played") -> dict:
+    """{round: (frame, tick_values)} for 'events after tick t in round r'.
+
+    Frames keep the (tick-sorted, stable) row order of `df`, so a binary-search
+    slice reproduces the previous boolean-mask result exactly.
+    """
+    df = _sorted_by_tick(df)
+    index = {}
+    for round_id, frame in df.groupby(round_col, sort=False):
+        index[round_id] = (frame, frame["tick"].to_numpy())
+    return index
+
+def _future_events(round_index, empty_frame, round_id, tick):
+    """Rows of round_index[round_id] with tick > `tick` (empty frame if none)."""
+    entry = round_index.get(round_id)
+    if entry is None:
+        return empty_frame
+    frame, tick_values = entry
+    return _rows_after_tick(frame, tick_values, tick)
 
 def check_steamid_consistency(json_data):
     base_ids = {}
@@ -180,17 +256,18 @@ def extract_states(demo_path: str, ticks: list[int]) -> list[dict]:
                 # "player_info": player_info
             }
 
-    all_ticks = list(range(0, max(ticks) + 1, 1))
-    df_all = parser.parse_ticks(  
-        wanted_props=["inventory", "X", "Y", "Z", "total_rounds_played"],  
-        ticks=all_ticks  
-    )
-    bomb_carrier_by_tick = {}  
-    for row in df_all.itertuples():  
-        if isinstance(row.inventory, list) and "C4 Explosive" in row.inventory:  
-            bomb_carrier_by_tick[row.tick] = (row.steamid, row.X, row.Y, row.Z, row.total_rounds_played)
-
     df_ticks = parser.parse_ticks(wanted_props=["game_time", "game_start_time", "total_rounds_played", "X", "Y", "Z", "weapon_name", "inventory", "inventory_as_ids", "pitch", "yaw", "is_alive", "health", "flash_duration", "flash_max_alpha", "team_num", "last_place_name", "armor", "has_helmet", "has_defuser", "is_bomb_planted", "is_bomb_dropped", "approximate_spotted_by", "velocity", "velocity_X", "velocity_Y", "velocity_Z"], ticks=ticks)
+
+    # Audit P-1: bounded C4-carrier lookup — derive the carrier map from the
+    # sampled ticks we just parsed instead of parsing every tick from 0 to
+    # max_tick; find_last_carrier_tick backtracks over the parsed ticks only.
+    bomb_carrier_by_tick = build_bomb_carrier_map(df_ticks)
+    carrier_sorted_ticks = sorted(bomb_carrier_by_tick)
+
+    # Audit P-2: pre-index the frames once instead of boolean-filtering the
+    # whole frame on every sampled tick.
+    df_ticks, df_tick_values = _per_tick_index(df_ticks)
+    df_grenades, grenade_tick_values = _per_tick_index(df_grenades)
 
     results = []
 
@@ -198,11 +275,16 @@ def extract_states(demo_path: str, ticks: list[int]) -> list[dict]:
 
     damage_ticks = parser.parse_event("player_hurt", other=["total_rounds_played", "game_time"])
 
+    death_round_index = _round_event_index(death_ticks)
+    damage_round_index = _round_event_index(damage_ticks)
+    empty_deaths = death_ticks.iloc[0:0]
+    empty_damage = damage_ticks.iloc[0:0]
+
     
 
     for tick in ticks:
         info = {}
-        df_tick = df_ticks[df_ticks['tick'] == tick]
+        df_tick = _rows_at_tick(df_ticks, df_tick_values, tick)
         assert len(df_tick) == 10  # 10 players
         info['round'] = df_tick.iloc[0]['total_rounds_played']
         info['tick'] = tick
@@ -222,9 +304,9 @@ def extract_states(demo_path: str, ticks: list[int]) -> list[dict]:
             info['bomb_planted_duration'] = None
 
         info['entity_grenades'] = []
-        info['bomb_position'] = find_last_carrier_tick(tick, bomb_carrier_by_tick, info['round'])
+        info['bomb_position'] = find_last_carrier_tick(tick, bomb_carrier_by_tick, info['round'], carrier_sorted_ticks)
         assert info['bomb_position'] is not None, f"Bomb carrier not found for tick {tick} in round {info['round']}"
-        now_entity = df_grenades[(df_grenades['tick'] == tick)]
+        now_entity = _rows_at_tick(df_grenades, grenade_tick_values, tick)
         for row in now_entity.itertuples():
 
             # skip if position is NaN
@@ -341,7 +423,7 @@ def extract_states(demo_path: str, ticks: list[int]) -> list[dict]:
     
 
         # next_kill_info = {}
-        future_deaths = death_ticks[(death_ticks['tick'] > tick) & (death_ticks['total_rounds_played'] == info['round'])]
+        future_deaths = _future_events(death_round_index, empty_deaths, info['round'], tick)
         # if not future_deaths.empty:
         #     next_death = future_deaths.iloc[0]
         #     next_kill_info = {
@@ -381,7 +463,7 @@ def extract_states(demo_path: str, ticks: list[int]) -> list[dict]:
             })
         info['future_kills'] = future_kill_info
 
-        future_damage = damage_ticks[(damage_ticks['tick'] > tick) & (damage_ticks['total_rounds_played'] == info['round'])]
+        future_damage = _future_events(damage_round_index, empty_damage, info['round'], tick)
         future_damage_info = []
         for _, future_dmg in future_damage.iterrows():
             future_damage_info.append({
@@ -561,16 +643,19 @@ def extract_states_by_group(demo_path: str, ticks_group: list[list[int]]) -> lis
     damage_ticks = parser.parse_event("player_hurt", other=["total_rounds_played", "game_time"])
 
     from tqdm import tqdm
-    
-    all_ticks = list(range(0, max([tick for tick_group in ticks_group for tick in tick_group]) + 1, 1))
-    df_all = parser.parse_ticks(  
-        wanted_props=["inventory", "X", "Y", "Z", "total_rounds_played"],  
-        ticks=all_ticks  
-    )
-    bomb_carrier_by_tick = {}  
-    for row in df_all.itertuples():  
-        if isinstance(row.inventory, list) and "C4 Explosive" in row.inventory:  
-            bomb_carrier_by_tick[row.tick] = (row.steamid, row.X, row.Y, row.Z, row.total_rounds_played)
+
+    # Audit P-2: pre-index the grenade/event frames once instead of
+    # boolean-filtering the whole frame on every sampled tick.
+    df_grenades, grenade_tick_values = _per_tick_index(df_grenades)
+    death_round_index = _round_event_index(death_ticks)
+    damage_round_index = _round_event_index(damage_ticks)
+    empty_deaths = death_ticks.iloc[0:0]
+    empty_damage = damage_ticks.iloc[0:0]
+
+    # Audit P-1: bounded C4-carrier lookup — carrier records are accumulated
+    # per round from that round's sampled ticks (see build_bomb_carrier_map)
+    # instead of parsing every tick from 0 to max_tick.
+    bomb_carrier_by_tick = {}
 
     for ticks in tqdm(ticks_group, desc="Extracting states by round"):
         
@@ -581,13 +666,21 @@ def extract_states_by_group(demo_path: str, ticks_group: list[list[int]]) -> lis
 
             df_ticks = parser.parse_ticks(wanted_props=["game_time", "game_start_time", "total_rounds_played", "X", "Y", "Z", "weapon_name", "inventory", "inventory_as_ids", "pitch", "yaw", "is_alive", "health", "flash_duration", "flash_max_alpha", "team_num", "last_place_name", "armor", "has_helmet", "has_defuser", "is_bomb_planted", "is_bomb_dropped", "approximate_spotted_by", "velocity", "velocity_X", "velocity_Y", "velocity_Z"], ticks=ticks)
 
+            # Audit P-1: bounded C4-carrier lookup — add this round's sampled
+            # ticks to the carrier map (no full 0..max_tick parse).
+            bomb_carrier_by_tick.update(build_bomb_carrier_map(df_ticks))
+            carrier_sorted_ticks = sorted(bomb_carrier_by_tick)
+
+            # Audit P-2: pre-index this round's player frame once.
+            df_ticks, df_tick_values = _per_tick_index(df_ticks)
+
             results = []
 
             
 
             for tick in ticks:
                 info = {}
-                df_tick = df_ticks[df_ticks['tick'] == tick]
+                df_tick = _rows_at_tick(df_ticks, df_tick_values, tick)
                 assert len(df_tick) == 10  # 10 players
                 info['round'] = df_tick.iloc[0]['total_rounds_played']
                 info['tick'] = tick
@@ -607,9 +700,9 @@ def extract_states_by_group(demo_path: str, ticks_group: list[list[int]]) -> lis
                     info['bomb_planted_duration'] = None
 
                 info['entity_grenades'] = []
-                info['bomb_position'] = find_last_carrier_tick(tick, bomb_carrier_by_tick, info['round'])
+                info['bomb_position'] = find_last_carrier_tick(tick, bomb_carrier_by_tick, info['round'], carrier_sorted_ticks)
                 assert info['bomb_position'] is not None, f"Bomb carrier not found for tick {tick} in round {info['round']}"
-                now_entity = df_grenades[(df_grenades['tick'] == tick)]
+                now_entity = _rows_at_tick(df_grenades, grenade_tick_values, tick)
                 for row in now_entity.itertuples():
 
                     # skip if position is NaN
@@ -725,7 +818,7 @@ def extract_states_by_group(demo_path: str, ticks_group: list[list[int]]) -> lis
             
 
                 # next_kill_info = {}
-                future_deaths = death_ticks[(death_ticks['tick'] > tick) & (death_ticks['total_rounds_played'] == info['round'])]
+                future_deaths = _future_events(death_round_index, empty_deaths, info['round'], tick)
                 # if not future_deaths.empty:
                 #     next_death = future_deaths.iloc[0]
                 #     next_kill_info = {
@@ -765,7 +858,7 @@ def extract_states_by_group(demo_path: str, ticks_group: list[list[int]]) -> lis
                     })
                 info['future_kills'] = future_kill_info
 
-                future_damage = damage_ticks[(damage_ticks['tick'] > tick) & (damage_ticks['total_rounds_played'] == info['round'])]
+                future_damage = _future_events(damage_round_index, empty_damage, info['round'], tick)
                 future_damage_info = []
                 for _, future_dmg in future_damage.iterrows():
                     future_damage_info.append({

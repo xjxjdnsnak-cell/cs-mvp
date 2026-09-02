@@ -1,6 +1,7 @@
 """Rule-based HE grenade impact scoring."""
 
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -246,15 +247,30 @@ def he_inventory_count(inventory: Any) -> int:
     return sum(1 for item in inventory if is_he_weapon(item))
 
 
+@lru_cache(maxsize=None)
+def _load_callout_yaml(map_name: str | None) -> dict[str, Any] | None:
+    """Parsed callout YAML for a map, cached per map name (audit P-4).
+
+    Mirrors map_tactics.load_map_areas: the map knowledge was re-read from disk
+    on every per-player scoring call; long-lived processes now keep the parsed
+    YAML until restart.
+    """
+    if not map_name:
+        return None
+    cfg_path = Path(__file__).resolve().parents[2] / "config" / "callouts" / f"{map_name}.yaml"
+    if not cfg_path.exists():
+        return None
+    with cfg_path.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
 def load_he_map_knowledge(round_context: RoundContext) -> dict[str, Any]:
     map_name = getattr(round_context, "map_name", None)
     if not map_name or map_name == "Unknown":
         return {}
-    cfg_path = Path(__file__).resolve().parents[2] / "config" / "callouts" / f"{map_name}.yaml"
-    if not cfg_path.exists():
+    data = _load_callout_yaml(map_name)
+    if data is None:
         return {}
-    with cfg_path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
     return {
         "smoke_targets": data.get("smoke_targets") or {},
         "he_cross_zones": data.get("he_cross_zones") or [],

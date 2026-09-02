@@ -1,6 +1,7 @@
 """Rule-based Molotov / Incendiary impact scoring."""
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -343,15 +344,30 @@ def fire_inventory_count(inventory: Any) -> int:
     )
 
 
+@lru_cache(maxsize=None)
+def _load_callout_yaml(map_name: str | None) -> dict[str, Any] | None:
+    """Parsed callout YAML for a map, cached per map name (audit P-4).
+
+    Mirrors map_tactics.load_map_areas: the map knowledge was re-read from disk
+    on every per-player scoring call; long-lived processes now keep the parsed
+    YAML until restart.
+    """
+    if not map_name:
+        return None
+    cfg_path = Path(__file__).resolve().parents[2] / "config" / "callouts" / f"{map_name}.yaml"
+    if not cfg_path.exists():
+        return None
+    with cfg_path.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
 def load_fire_targets(round_context: RoundContext) -> dict[str, FireTarget]:
     map_name = round_context.map_name
     if not map_name or map_name == "Unknown":
         return {}
-    cfg_path = Path(__file__).resolve().parents[2] / "config" / "callouts" / f"{map_name}.yaml"
-    if not cfg_path.exists():
+    data = _load_callout_yaml(map_name)
+    if data is None:
         return {}
-    with cfg_path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
     targets = {}
     for name, raw in (data.get("fire_targets") or {}).items():
         center = coerce_xy(raw.get("center") or raw.get("target_center"))
