@@ -23,39 +23,15 @@ Kepp_rate = (1/(4 * 2)) # Rate to process a tick
 
 print(f"Sample every {(1/Kepp_rate)/4} seconds")
 
-map_config = {
-	"maps": {
-		"de_mirage": {
-			"center": [-605.8900146484375, -866.8900146484375, -171.6199951171875],
-		},
-		"de_dust2": {
-			"center": [-199.0, 977.0, 32.220001220703125],
-		},
-		"de_inferno": {
-			"center": [481.07000732421875, 1396.47998046875, 137.91000366210938],
-		},
-		"de_nuke": {
-			"center": [265.9599914550781, -772.5, -381.8999938964844],
-		},
-		"de_overpass": {
-			"center": [-2027.3900146484375, -812.9000244140625, 324.95001220703125],
-		},
-		"de_ancient": {
-			"center": [-435.5, -348.0, 43.650001525878906],
-		},
-		"de_anubis": {
-			"center": [-77.38999938964844, 618.9000244140625, -6.800000190734863],
-		},
-		"de_train": {
-			"center": [-118.25, -2.0, -128.52000427246094],
-		},
-	},
-	"ranges": {
-		"x": [-5000, 5000],
-		"y": [-5000, 5000],
-		"z": [-2000, 2000],
-	},
-}
+# Single source of truth shared with inference (audit A-3).
+import sys as _sys
+
+_PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
+if _PROJECT_ROOT not in _sys.path:
+    _sys.path.insert(0, _PROJECT_ROOT)
+
+from demoparser_utils.map_config import MAP_CONFIG as map_config  # noqa: E402
+
 
 map_name_to_idx = {map_name: idx for idx, map_name in enumerate(map_config["maps"].keys())}
 

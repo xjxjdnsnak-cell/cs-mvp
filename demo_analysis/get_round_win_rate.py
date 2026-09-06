@@ -18,41 +18,7 @@ from models.model3_space_only import CSModelV3
 SPACE_SIZE = 31
 N_PLAYERS = 10
 
-MAP_CONFIG = {
-    "maps": {
-        "de_mirage": {
-            "center": [-605.8900146484375, -866.8900146484375, -171.6199951171875],
-        },
-        "de_dust2": {
-            "center": [-199.0, 977.0, 32.220001220703125],
-        },
-        "de_inferno": {
-            "center": [481.07000732421875, 1396.47998046875, 137.91000366210938],
-        },
-        "de_nuke": {
-            "center": [265.9599914550781, -772.5, -381.8999938964844],
-        },
-        "de_overpass": {
-            "center": [-2027.3900146484375, -812.9000244140625, 324.95001220703125],
-        },
-        "de_ancient": {
-            "center": [-435.5, -348.0, 43.650001525878906],
-        },
-        "de_anubis": {
-            "center": [-77.38999938964844, 618.9000244140625, -6.800000190734863],
-        },
-        "de_train": {
-            "center": [-118.25, -2.0, -128.52000427246094],
-        },
-    },
-    "ranges": {
-        "x": [-5000, 5000],
-        "y": [-5000, 5000],
-        "z": [-2000, 2000],
-    },
-}
-
-MAP_NAME_TO_IDX = {map_name: idx for idx, map_name in enumerate(MAP_CONFIG["maps"].keys())}
+from demoparser_utils.map_config import MAP_CONFIG, MAP_NAME_TO_IDX  # noqa: F401  (single source of truth, audit A-3)
 
 
 def clip_and_scale(value, range_vals):
